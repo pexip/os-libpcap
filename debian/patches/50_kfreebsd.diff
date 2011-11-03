@@ -1,0 +1,101 @@
+Support for GNU/kFreeBSD, by Aurelien Jarno and others.
+---
+ Makefile.in  |    2 +-
+ configure    |    6 ++++--
+ configure.in |    6 ++++--
+ pcap-bpf.c   |    1 +
+ 4 files changed, 10 insertions(+), 5 deletions(-)
+
+--- a/configure.in
++++ b/configure.in
+@@ -104,6 +104,7 @@
+ dnl
+ AC_CHECK_HEADERS(sys/ioccom.h sys/sockio.h limits.h paths.h)
+ AC_CHECK_HEADERS(net/pfvar.h, , , [#include <sys/types.h>
++#include <net/if_pflog.h>
+ #include <sys/socket.h>
+ #include <net/if.h>])
+ if test "$ac_cv_header_net_pfvar_h" = yes; then
+@@ -304,7 +305,7 @@
+ 	#
+ 	V_PCAP=bpf
+ 	AC_DEFINE(HAVE_CLONING_BPF,1,[define if you have a cloning BPF device])
+-elif test -r /dev/bpf0 ; then
++elif test -r /dev/bpf0 || test -r /usr/include/net/bpf.h ; then
+ 	V_PCAP=bpf
+ elif test -r /usr/include/net/pfilt.h ; then
+ 	V_PCAP=pf
+@@ -490,6 +491,7 @@
+ #endif
+ #include <net/bpf.h>
+ 		    ])
++	    LIBS="$LIBS -lrt"
+ 	;;
+ 
+ dag)
+@@ -1234,7 +1236,7 @@
+ 	MAN_MISC_INFO=5
+ 	;;
+ 
+-linux*|freebsd*|netbsd*|openbsd*|dragonfly*)
++linux*|freebsd*|netbsd*|openbsd*|dragonfly*|kfreebsd*)
+ 	DYEXT="so"
+ 
+ 	#
+--- a/configure
++++ b/configure
+@@ -5440,6 +5440,7 @@
+ cat >>conftest.$ac_ext <<_ACEOF
+ /* end confdefs.h.  */
+ #include <sys/types.h>
++#include <net/if_pflog.h>
+ #include <sys/socket.h>
+ #include <net/if.h>
+ 
+@@ -6923,7 +6924,7 @@
+ #define HAVE_CLONING_BPF 1
+ _ACEOF
+ 
+-elif test -r /dev/bpf0 ; then
++elif test -r /dev/bpf0 || test -r /usr/include/net/bpf.h ; then
+ 	V_PCAP=bpf
+ elif test -r /usr/include/net/pfilt.h ; then
+ 	V_PCAP=pf
+@@ -7795,6 +7796,7 @@
+ 
+ fi
+ 
++	    LIBS="$LIBS -lrt"
+ 	;;
+ 
+ dag)
+@@ -9607,7 +9609,7 @@
+ 	MAN_MISC_INFO=5
+ 	;;
+ 
+-linux*|freebsd*|netbsd*|openbsd*|dragonfly*)
++linux*|freebsd*|netbsd*|openbsd*|dragonfly*|kfreebsd*)
+ 	DYEXT="so"
+ 
+ 	#
+--- a/pcap-bpf.c
++++ b/pcap-bpf.c
+@@ -31,6 +31,7 @@
+ #ifdef HAVE_ZEROCOPY_BPF
+ #include <sys/mman.h>
+ #endif
++#include <time.h>
+ #include <sys/time.h>
+ #include <sys/socket.h>
+ /*
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -426,7 +426,7 @@
+ $(SHAREDLIB): $(OBJ_PIC)
+ 	-@rm -f $@
+ 	-@rm -f $(SOLIBRARY) $(SOLIBRARY).$(MAJ)
+-	$(CC) $(CFLAGS_SHARED) -o $(SHAREDLIB) $(OBJ_PIC) -lc
++	$(CC) $(CFLAGS_SHARED) -o $(SHAREDLIB) $(OBJ_PIC) -lc $(LIBS)
+ 	ln -s $(SHAREDLIB) $(SOLIBRARY).$(MAJ)
+ 	ln -s $(SOLIBRARY).$(MAJ) $(SOLIBRARY)
+ 

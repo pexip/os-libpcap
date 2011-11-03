@@ -1,0 +1,61 @@
+commit 93583909e1c9e1f8d691d141d57ffaa18f5ba6ee
+Author: Jesper Dangaard Brouer <hawk@comx.dk>
+Date:   Tue Feb 1 11:39:51 2011 -0800
+
+    Fix configure-script discovery of VLAN acceleration support.
+    
+    VLAN acceleration support is broken, when using GCC compiler >= 4.4
+    (tested with gcc version 4.4.5 (Debian 4.4.5-4)), due to the configure
+    script.
+    
+    GCC 4.4 does not indirectly include the type of u_int, which the
+    configure code choose to use for this test. Thus, the if_packet check
+    fails due to the error: 'u_int' undeclared, eventhough the header
+    file if_packet.h contains the correct structs.
+    
+    Fix the AC_LBL_LINUX_TPACKET_AUXDATA_TP_VLAN_TCI macro compile test,
+    by simply including <sys/types.h>.
+    
+    A longer description is available on my blog here:
+    http://netoptimizer.blogspot.com/2010/09/tcpdump-vs-vlan-tags.html
+    
+    Also fix the wrong AC_CACHE_VAL.
+    
+    Reviewed-By: Guy Harris <guy@alum.mit.edu>
+
+diff --git a/aclocal.m4 b/aclocal.m4
+index 2cce559..20db44f 100644
+--- a/aclocal.m4
++++ b/aclocal.m4
+@@ -995,8 +995,9 @@ dnl code that would use that member, or we wouldn't compile in any case).
+ dnl
+ AC_DEFUN(AC_LBL_LINUX_TPACKET_AUXDATA_TP_VLAN_TCI,
+     [AC_MSG_CHECKING(if tpacket_auxdata struct has tp_vlan_tci member)
+-    AC_CACHE_VAL(ac_cv_lbl_dl_hp_ppa_info_t_has_dl_module_id_1,
++    AC_CACHE_VAL(ac_cv_lbl_linux_tpacket_auxdata_tp_vlan_tci,
+ 	AC_TRY_COMPILE([
++#	include <sys/types.h>
+ #	include <linux/if_packet.h>],
+ 	[u_int i = sizeof(((struct tpacket_auxdata *)0)->tp_vlan_tci)],
+ 	ac_cv_lbl_linux_tpacket_auxdata_tp_vlan_tci=yes,
+diff --git a/configure b/configure
+index 36e416e..4c46bd7 100755
+--- a/configure
++++ b/configure
+@@ -7578,7 +7578,7 @@ _ACEOF
+    fi
+ 	{ echo "$as_me:$LINENO: checking if tpacket_auxdata struct has tp_vlan_tci member" >&5
+ echo $ECHO_N "checking if tpacket_auxdata struct has tp_vlan_tci member... $ECHO_C" >&6; }
+-    if test "${ac_cv_lbl_dl_hp_ppa_info_t_has_dl_module_id_1+set}" = set; then
++    if test "${ac_cv_lbl_linux_tpacket_auxdata_tp_vlan_tci+set}" = set; then
+   echo $ECHO_N "(cached) $ECHO_C" >&6
+ else
+   cat >conftest.$ac_ext <<_ACEOF
+@@ -7588,6 +7588,7 @@ cat confdefs.h >>conftest.$ac_ext
+ cat >>conftest.$ac_ext <<_ACEOF
+ /* end confdefs.h.  */
+ 
++#	include <sys/types.h>
+ #	include <linux/if_packet.h>
+ int
+ main ()

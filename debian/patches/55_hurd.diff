@@ -1,0 +1,24 @@
+Support for GNU/Hurd, by Svante Signell.
+
+--- libpcap-1.1.1/configure.in.orig	2011-02-11 00:27:57.000000000 +0100
++++ libpcap-1.1.1/configure.in	2011-02-11 00:29:56.000000000 +0100
+@@ -1221,7 +1221,7 @@
+ 	MAN_MISC_INFO=5
+ 	;;
+ 
+-linux*|freebsd*|netbsd*|openbsd*|dragonfly*|kfreebsd*)
++linux*|freebsd*|netbsd*|openbsd*|dragonfly*|kfreebsd*|gnu*)
+ 	DYEXT="so"
+ 
+ 	#
+--- libpcap-1.1.1/configure.orig	2011-02-11 00:27:57.000000000 +0100
++++ libpcap-1.1.1/configure	2011-02-11 00:30:50.000000000 +0100
+@@ -9551,7 +9551,7 @@
+ 	MAN_MISC_INFO=5
+ 	;;
+ 
+-linux*|freebsd*|netbsd*|openbsd*|dragonfly*|kfreebsd*)
++linux*|freebsd*|netbsd*|openbsd*|dragonfly*|kfreebsd*|gnu*)
+ 	DYEXT="so"
+ 
+ 	#

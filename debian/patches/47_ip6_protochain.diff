@@ -1,0 +1,33 @@
+commit ecdc5c0a7f7591a7cd4aff696e42757c677fbbf7
+Author: Guy Harris <guy@alum.mit.edu>
+Date:   Wed May 4 22:28:53 2011 -0700
+
+    In userland, sign extend the offset for JA instructions.
+    
+    We currently use that to implement "ip6 protochain", and "pc" might be
+    wider than "pc->k", in which case we need to arrange that "pc->k" be
+    sign-extended, by casting it to bpf_int32.
+
+diff --git a/bpf/net/bpf_filter.c b/bpf/net/bpf_filter.c
+index 22aff79..0c4fb00 100644
+--- a/bpf/net/bpf_filter.c
++++ b/bpf/net/bpf_filter.c
+@@ -405,7 +405,18 @@ bpf_filter(pc, p, wirelen, buflen)
+ 			continue;
+ 
+ 		case BPF_JMP|BPF_JA:
++#if defined(KERNEL) || defined(_KERNEL)
++			/*
++			 * No backward jumps allowed.
++			 */
+ 			pc += pc->k;
++#else
++			/*
++			 * XXX - we currently implement "ip6 protochain"
++			 * with backward jumps, so sign-extend pc->k.
++			 */
++			pc += (bpf_int32)pc->k;
++#endif
+ 			continue;
+ 
+ 		case BPF_JMP|BPF_JGT|BPF_K:
