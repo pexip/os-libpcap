@@ -1,3 +1,9 @@
+libpcap (1.1.1-10pexip1) pexip; urgency=low
+
+  * Prepare Pexip packaging
+
+ -- John-Mark Bell <jmb@pexip.com>  Tue, 24 Dec 2013 21:54:52 +0000
+
 libpcap (1.1.1-10) unstable; urgency=low
 
   * Cherry-pick commit 93583909e1 from upstream to fix detection of VLAN

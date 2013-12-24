@@ -1,7 +1,8 @@
 Source: libpcap
 Section: devel
 Priority: optional
-Maintainer: Romain Francoise <rfrancoise@debian.org>
+Maintainer: Pexip AS <packaging@pexip.com>
+XSBC-Pexip-Original-Maintainer: Romain Francoise <rfrancoise@debian.org>
 Build-Depends: debhelper (>= 8.1.3),
                flex,
                bison,
@@ -12,6 +13,7 @@ Standards-Version: 3.9.2
 Homepage: http://www.tcpdump.org/
 Vcs-Browser: http://git.debian.org/?p=users/rfrancoise/libpcap.git
 Vcs-Git: git://git.debian.org/git/users/rfrancoise/libpcap.git
+XS-Pexip-Upstream: http://archive.ubuntu.com/ubuntu/ precise
 
 Package: libpcap-dev
 Section: libdevel
