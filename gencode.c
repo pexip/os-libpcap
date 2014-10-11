@@ -19,10 +19,6 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
-#ifndef lint
-static const char rcsid[] _U_ =
-    "@(#) $Header: /tcpdump/master/libpcap/gencode.c,v 1.309 2008-12-23 20:13:29 guy Exp $ (LBL)";
-#endif
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -47,7 +43,7 @@ static const char rcsid[] _U_ =
  * XXX - why was this included even on UNIX?
  */
 #ifdef __MINGW32__
-#include "IP6_misc.h"
+#include "ip6_misc.h"
 #endif
 
 #ifndef WIN32
@@ -84,6 +80,11 @@ static const char rcsid[] _U_ =
 #include "pcap/sll.h"
 #include "pcap/ipnet.h"
 #include "arcnet.h"
+#if defined(linux) && defined(PF_PACKET) && defined(SO_ATTACH_FILTER)
+#include <linux/types.h>
+#include <linux/if_packet.h>
+#include <linux/filter.h>
+#endif
 #ifdef HAVE_NET_PFVAR_H
 #include <sys/socket.h>
 #include <net/if.h>
@@ -102,6 +103,18 @@ static const char rcsid[] _U_ =
 
 #define ETHERMTU	1500
 
+#ifndef IPPROTO_HOPOPTS
+#define IPPROTO_HOPOPTS 0
+#endif
+#ifndef IPPROTO_ROUTING
+#define IPPROTO_ROUTING 43
+#endif
+#ifndef IPPROTO_FRAGMENT
+#define IPPROTO_FRAGMENT 44
+#endif
+#ifndef IPPROTO_DSTOPTS
+#define IPPROTO_DSTOPTS 60
+#endif
 #ifndef IPPROTO_SCTP
 #define IPPROTO_SCTP 132
 #endif
@@ -124,9 +137,7 @@ static u_int	orig_linktype = -1U, orig_nl = -1U, label_stack_depth = -1U;
 #endif
 
 /* XXX */
-#ifdef PCAP_FDDIPAD
 static int	pcap_fddipad;
-#endif
 
 /* VARARGS */
 void
@@ -256,20 +267,16 @@ static struct block *gen_gateway(const u_char *, bpf_u_int32 **, int, int);
 static struct block *gen_ipfrag(void);
 static struct block *gen_portatom(int, bpf_int32);
 static struct block *gen_portrangeatom(int, bpf_int32, bpf_int32);
-#ifdef INET6
 static struct block *gen_portatom6(int, bpf_int32);
 static struct block *gen_portrangeatom6(int, bpf_int32, bpf_int32);
-#endif
 struct block *gen_portop(int, int, int);
 static struct block *gen_port(int, int, int);
 struct block *gen_portrangeop(int, int, int, int);
 static struct block *gen_portrange(int, int, int, int);
-#ifdef INET6
 struct block *gen_portop6(int, int, int);
 static struct block *gen_port6(int, int, int);
 struct block *gen_portrangeop6(int, int, int, int);
 static struct block *gen_portrange6(int, int, int, int);
-#endif
 static int lookup_proto(const char *, int);
 static struct block *gen_protochain(int, int, int);
 static struct block *gen_proto(int, int, int);
@@ -387,44 +394,47 @@ syntax()
 static bpf_u_int32 netmask;
 static int snaplen;
 int no_optimize;
-#ifdef WIN32
-static int
-pcap_compile_unsafe(pcap_t *p, struct bpf_program *program,
-	     const char *buf, int optimize, bpf_u_int32 mask);
 
 int
 pcap_compile(pcap_t *p, struct bpf_program *program,
 	     const char *buf, int optimize, bpf_u_int32 mask)
-{
-	int result;
-
-	EnterCriticalSection(&g_PcapCompileCriticalSection);
-
-	result = pcap_compile_unsafe(p, program, buf, optimize, mask);
-
-	LeaveCriticalSection(&g_PcapCompileCriticalSection);
-	
-	return result;
-}
-
-static int
-pcap_compile_unsafe(pcap_t *p, struct bpf_program *program,
-	     const char *buf, int optimize, bpf_u_int32 mask)
-#else /* WIN32 */
-int
-pcap_compile(pcap_t *p, struct bpf_program *program,
-	     const char *buf, int optimize, bpf_u_int32 mask)
-#endif /* WIN32 */
 {
 	extern int n_errors;
 	const char * volatile xbuf = buf;
-	int len;
+	u_int len;
+	int  rc;
 
+	/*
+	 * XXX - single-thread this code path with pthread calls on
+	 * UN*X, if the platform supports pthreads?  If that requires
+	 * a separate -lpthread, we might not want to do that.
+	 */
+#ifdef WIN32
+	extern int wsockinit (void);
+	static int done = 0;
+
+	if (!done)
+		wsockinit();
+	done = 1;
+	EnterCriticalSection(&g_PcapCompileCriticalSection);
+#endif
+
+	/*
+	 * If this pcap_t hasn't been activated, it doesn't have a
+	 * link-layer type, so we can't use it.
+	 */
+	if (!p->activated) {
+		snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
+		    "not-yet-activated pcap_t passed to pcap_compile");
+		rc = -1;
+		goto quit;
+	}
 	no_optimize = 0;
 	n_errors = 0;
 	root = NULL;
 	bpf_pcap = p;
 	init_regs();
+
 	if (setjmp(top_ctx)) {
 #ifdef INET6
 		if (ai != NULL) {
@@ -434,7 +444,8 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 #endif
 		lex_cleanup();
 		freechunks();
-		return (-1);
+		rc = -1;
+		goto quit;
 	}
 
 	netmask = mask;
@@ -443,7 +454,8 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 	if (snaplen == 0) {
 		snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
 			 "snaplen of 0 rejects all packets");
-		return -1;
+		rc = -1;
+		goto quit;
 	}
 
 	lex_init(xbuf ? xbuf : "");
@@ -467,7 +479,16 @@ pcap_compile(pcap_t *p, struct bpf_program *program,
 
 	lex_cleanup();
 	freechunks();
-	return (0);
+
+	rc = 0;  /* We're all okay */
+
+quit:
+
+#ifdef WIN32
+	LeaveCriticalSection(&g_PcapCompileCriticalSection);
+#endif
+
+	return (rc);
 }
 
 /*
@@ -572,7 +593,7 @@ finish_parse(p)
 	 * worth the effort.
 	 */
 	insert_compute_vloffsets(p->head);
-	
+
 	/*
 	 * For DLT_PPI captures, generate a check of the per-packet
 	 * DLT value to make sure it's DLT_IEEE802_11.
@@ -772,7 +793,8 @@ static int reg_off_ll;
  * This is the offset of the beginning of the MAC-layer header from
  * the beginning of the link-layer header.
  * It's usually 0, except for ATM LANE, where it's the offset, relative
- * to the beginning of the raw packet data, of the Ethernet header.
+ * to the beginning of the raw packet data, of the Ethernet header, and
+ * for Ethernet with various additional information.
  */
 static u_int off_mac;
 
@@ -853,6 +875,7 @@ static u_int off_proto;
  * These are offsets for the MTP2 fields.
  */
 static u_int off_li;
+static u_int off_li_hsl;
 
 /*
  * These are offsets for the MTP3 fields.
@@ -902,9 +925,7 @@ init_linktype(p)
 	pcap_t *p;
 {
 	linktype = pcap_datalink(p);
-#ifdef PCAP_FDDIPAD
 	pcap_fddipad = p->fddipad;
-#endif
 
 	/*
 	 * Assume it's not raw ATM with a pseudo-header, for now.
@@ -926,6 +947,7 @@ init_linktype(p)
 	 * And assume we're not doing SS7.
 	 */
 	off_li = -1;
+	off_li_hsl = -1;
 	off_sio = -1;
 	off_opc = -1;
 	off_dpc = -1;
@@ -1041,13 +1063,9 @@ init_linktype(p)
 		 * XXX - should we generate code to check for SNAP?
 		 */
 		off_linktype = 13;
-#ifdef PCAP_FDDIPAD
 		off_linktype += pcap_fddipad;
-#endif
 		off_macpl = 13;		/* FDDI MAC header length */
-#ifdef PCAP_FDDIPAD
 		off_macpl += pcap_fddipad;
-#endif
 		off_nl = 8;		/* 802.2+SNAP */
 		off_nl_nosnap = 3;	/* 802.2 */
 		return;
@@ -1111,7 +1129,7 @@ init_linktype(p)
 		return;
 
 	case DLT_PPI:
-		/* 
+		/*
 		 * At the moment we treat PPI the same way that we treat
 		 * normal Radiotap encoded packets. The difference is in
 		 * the function that generates the code at the beginning
@@ -1238,26 +1256,6 @@ init_linktype(p)
 		off_nl_nosnap = 0;	/* no 802.2 LLC */
 		return;
 
-	case DLT_LINUX_IRDA:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_DOCSIS:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
 	case DLT_SYMANTEC_FIREWALL:
 		off_linktype = 6;
 		off_macpl = 44;
@@ -1338,6 +1336,13 @@ init_linktype(p)
 		off_nl_nosnap = -1;	/* no 802.2 LLC */
 		return;
 
+	case DLT_BACNET_MS_TP:
+		off_linktype = -1;
+		off_macpl = -1;
+		off_nl = -1;
+		off_nl_nosnap = -1;
+		return;
+
 	case DLT_JUNIPER_SERVICES:
 		off_linktype = 12;
 		off_macpl = -1;		/* L3 proto location dep. on cookie type */
@@ -1366,8 +1371,19 @@ init_linktype(p)
 		off_nl_nosnap = -1;
 		return;
 
+	case DLT_JUNIPER_VS:
+	case DLT_JUNIPER_SRX_E2E:
+	case DLT_JUNIPER_FIBRECHANNEL:
+	case DLT_JUNIPER_ATM_CEMIC:
+		off_linktype = 8;
+		off_macpl = -1;
+		off_nl = -1;
+		off_nl_nosnap = -1;
+		return;
+
 	case DLT_MTP2:
 		off_li = 2;
+		off_li_hsl = 4;
 		off_sio = 3;
 		off_opc = 4;
 		off_dpc = 4;
@@ -1380,6 +1396,7 @@ init_linktype(p)
 
 	case DLT_MTP2_WITH_PHDR:
 		off_li = 6;
+		off_li_hsl = 8;
 		off_sio = 7;
 		off_opc = 8;
 		off_dpc = 8;
@@ -1392,6 +1409,7 @@ init_linktype(p)
 
 	case DLT_ERF:
 		off_li = 22;
+		off_li_hsl = 24;
 		off_sio = 23;
 		off_opc = 24;
 		off_dpc = 24;
@@ -1402,133 +1420,11 @@ init_linktype(p)
 		off_nl_nosnap = -1;
 		return;
 
-#ifdef DLT_PFSYNC
 	case DLT_PFSYNC:
 		off_linktype = -1;
 		off_macpl = 4;
 		off_nl = 0;
 		off_nl_nosnap = 0;
-		return;
-#endif
-
-	case DLT_LINUX_LAPD:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_USB:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_BLUETOOTH_HCI_H4:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_USB_LINUX:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_CAN20B:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_IEEE802_15_4_LINUX:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_IEEE802_16_MAC_CPS_RADIO:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_IEEE802_15_4:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_SITA:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_RAIF1:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_IPMB:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_BLUETOOTH_HCI_H4_WITH_PHDR:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
 		return;
 
 	case DLT_AX25_KISS:
@@ -1542,52 +1438,43 @@ init_linktype(p)
 		off_mac = 1;		/* step over the kiss length byte */
 		return;
 
-	case DLT_IEEE802_15_4_NONASK_PHY:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_MPLS:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_USB_LINUX_MMAPPED:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
-	case DLT_CAN_SOCKETCAN:
-		/*
-		 * Currently, only raw "link[N:M]" filtering is supported.
-		 */
-		off_linktype = -1;
-		off_macpl = -1;
-		off_nl = -1;
-		off_nl_nosnap = -1;
-		return;
-
 	case DLT_IPNET:
 		off_linktype = 1;
 		off_macpl = 24;		/* ipnet header length */
 		off_nl = 0;
 		off_nl_nosnap = -1;
 		return;
+
+	case DLT_NETANALYZER:
+		off_mac = 4;		/* MAC header is past 4-byte pseudo-header */
+		off_linktype = 16;	/* includes 4-byte pseudo-header */
+		off_macpl = 18;		/* pseudo-header+Ethernet header length */
+		off_nl = 0;		/* Ethernet II */
+		off_nl_nosnap = 3;	/* 802.3+802.2 */
+		return;
+
+	case DLT_NETANALYZER_TRANSPARENT:
+		off_mac = 12;		/* MAC header is past 4-byte pseudo-header, preamble, and SFD */
+		off_linktype = 24;	/* includes 4-byte pseudo-header+preamble+SFD */
+		off_macpl = 26;		/* pseudo-header+preamble+SFD+Ethernet header length */
+		off_nl = 0;		/* Ethernet II */
+		off_nl_nosnap = 3;	/* 802.3+802.2 */
+		return;
+
+	default:
+		/*
+		 * For values in the range in which we've assigned new
+		 * DLT_ values, only raw "link[N:M]" filtering is supported.
+		 */
+		if (linktype >= DLT_MATCHING_MIN &&
+		    linktype <= DLT_MATCHING_MAX) {
+			off_linktype = -1;
+			off_macpl = -1;
+			off_nl = -1;
+			off_nl_nosnap = -1;
+			return;
+		}
+
 	}
 	bpf_error("unknown data link type %d", linktype);
 	/* NOTREACHED */
@@ -2417,7 +2304,7 @@ gen_load_radiotap_llprefixlen()
 		return (NULL);
 }
 
-/* 
+/*
  * At the moment we treat PPI as normal Radiotap encoded
  * packets. The difference is in the function that generates
  * the code at the beginning to compute the header length.
@@ -2430,7 +2317,7 @@ static struct slist *
 gen_load_ppi_llprefixlen()
 {
 	struct slist *s1, *s2;
-	
+
 	/*
 	 * Generate code to load the length of the radiotap header
 	 * into the register assigned to hold that length, if one has
@@ -2520,7 +2407,7 @@ gen_load_802_11_header_len(struct slist *s, struct slist *snext)
 	 * slist of instructions
 	 */
 	no_optimize = 1;
-	
+
 	/*
 	 * If "s" is non-null, it has code to arrange that the X register
 	 * contains the length of the prefix preceding the link-layer
@@ -2571,7 +2458,7 @@ gen_load_802_11_header_len(struct slist *s, struct slist *snext)
 	sjset_data_frame_1 = new_stmt(JMP(BPF_JSET));
 	sjset_data_frame_1->s.k = 0x08;
 	sappend(s, sjset_data_frame_1);
-		
+
 	/*
 	 * If b3 is set, test b2, otherwise go to the first statement of
 	 * the rest of the program.
@@ -2590,7 +2477,7 @@ gen_load_802_11_header_len(struct slist *s, struct slist *snext)
 	sjset_data_frame_2->s.jf = sjset_qos = new_stmt(JMP(BPF_JSET));
 	sjset_qos->s.k = 0x80;	/* QoS bit */
 	sappend(s, sjset_qos);
-		
+
 	/*
 	 * If it's set, add 2 to reg_off_macpl, to skip the QoS
 	 * field.
@@ -2861,7 +2748,7 @@ gen_radiotap_llprefixlen(void)
 	return s;
 }
 
-/* 
+/*
  * At the moment we treat PPI as normal Radiotap encoded
  * packets. The difference is in the function that generates
  * the code at the beginning to compute the header length.
@@ -2967,11 +2854,9 @@ ethertype_to_ppptype(proto)
 		proto = PPP_IP;
 		break;
 
-#ifdef INET6
 	case ETHERTYPE_IPV6:
 		proto = PPP_IPV6;
 		break;
-#endif
 
 	case ETHERTYPE_DN:
 		proto = PPP_DECNET;
@@ -3017,6 +2902,7 @@ gen_linktype(proto)
 	register int proto;
 {
 	struct block *b0, *b1, *b2;
+	const char *description;
 
 	/* are we checking MPLS-encapsulated packets? */
 	if (label_stack_depth > 0) {
@@ -3024,12 +2910,12 @@ gen_linktype(proto)
 		case ETHERTYPE_IP:
 		case PPP_IP:
 			/* FIXME add other L3 proto IDs */
-			return gen_mpls_linktype(Q_IP); 
+			return gen_mpls_linktype(Q_IP);
 
 		case ETHERTYPE_IPV6:
 		case PPP_IPV6:
 			/* FIXME add other L3 proto IDs */
-			return gen_mpls_linktype(Q_IPV6); 
+			return gen_mpls_linktype(Q_IPV6);
 
 		default:
 			bpf_error("unsupported protocol over mpls");
@@ -3059,6 +2945,8 @@ gen_linktype(proto)
 	switch (linktype) {
 
 	case DLT_EN10MB:
+	case DLT_NETANALYZER:
+	case DLT_NETANALYZER_TRANSPARENT:
 		return gen_ether_linktype(proto);
 		/*NOTREACHED*/
 		break;
@@ -3099,7 +2987,7 @@ gen_linktype(proto)
 
 	case DLT_FDDI:
 		/*
-		 * XXX - check for asynchronous frames, as per RFC 1103.
+		 * XXX - check for LLC frames.
 		 */
 		return gen_llc_linktype(proto);
 		/*NOTREACHED*/
@@ -3177,11 +3065,10 @@ gen_linktype(proto)
 		case ETHERTYPE_IP:
 			/* Check for a version number of 4. */
 			return gen_mcmp(OR_LINK, 0, BPF_B, 0x40, 0xF0);
-#ifdef INET6
+
 		case ETHERTYPE_IPV6:
 			/* Check for a version number of 6. */
 			return gen_mcmp(OR_LINK, 0, BPF_B, 0x60, 0xF0);
-#endif
 
 		default:
 			return gen_false();		/* always false */
@@ -3205,10 +3092,8 @@ gen_linktype(proto)
 		/*
 		 * Raw IPv6, so no type field.
 		 */
-#ifdef INET6
 		if (proto == ETHERTYPE_IPV6)
 			return gen_true();		/* always true */
-#endif
 
 		/* Checking for something other than IPv6; always false */
 		return gen_false();
@@ -3314,8 +3199,7 @@ gen_linktype(proto)
 			 * Then we run it through "htonl()", and
 			 * generate code to compare against the result.
 			 */
-			if (bpf_pcap->sf.rfile != NULL &&
-			    bpf_pcap->sf.swapped)
+			if (bpf_pcap->rfile != NULL && bpf_pcap->swapped)
 				proto = SWAPLONG(proto);
 			proto = htonl(proto);
 		}
@@ -3330,11 +3214,9 @@ gen_linktype(proto)
 		if (proto == ETHERTYPE_IP)
 			return (gen_cmp(OR_LINK, offsetof(struct pfloghdr, af),
 			    BPF_B, (bpf_int32)AF_INET));
-#ifdef INET6
 		else if (proto == ETHERTYPE_IPV6)
 			return (gen_cmp(OR_LINK, offsetof(struct pfloghdr, af),
 			    BPF_B, (bpf_int32)AF_INET6));
-#endif /* INET6 */
 		else
 			return gen_false();
 		/*NOTREACHED*/
@@ -3352,11 +3234,9 @@ gen_linktype(proto)
 		default:
 			return gen_false();
 
-#ifdef INET6
 		case ETHERTYPE_IPV6:
 			return (gen_cmp(OR_LINK, off_linktype, BPF_B,
 				(bpf_int32)ARCTYPE_INET6));
-#endif /* INET6 */
 
 		case ETHERTYPE_IP:
 			b0 = gen_cmp(OR_LINK, off_linktype, BPF_B,
@@ -3408,13 +3288,11 @@ gen_linktype(proto)
 			 */
 			return gen_cmp(OR_LINK, 2, BPF_H, (0x03<<8) | 0xcc);
 
-#ifdef INET6
 		case ETHERTYPE_IPV6:
 			/*
 			 * Check for the special NLPID for IPv6.
 			 */
 			return gen_cmp(OR_LINK, 2, BPF_H, (0x03<<8) | 0x8e);
-#endif
 
 		case LLCSAP_ISONS:
 			/*
@@ -3462,6 +3340,11 @@ gen_linktype(proto)
         case DLT_JUNIPER_VP:
         case DLT_JUNIPER_ST:
         case DLT_JUNIPER_ISM:
+        case DLT_JUNIPER_VS:
+        case DLT_JUNIPER_SRX_E2E:
+        case DLT_JUNIPER_FIBRECHANNEL:
+	case DLT_JUNIPER_ATM_CEMIC:
+
 		/* just lets verify the magic number for now -
 		 * on ATM we may have up to 6 different encapsulations on the wire
 		 * and need a lot of heuristics to figure out that the payload
@@ -3470,6 +3353,9 @@ gen_linktype(proto)
 		 * FIXME encapsulation specific BPF_ filters
 		 */
 		return gen_mcmp(OR_LINK, 0, BPF_W, 0x4d474300, 0xffffff00); /* compare the magic number */
+
+	case DLT_BACNET_MS_TP:
+		return gen_mcmp(OR_LINK, 0, BPF_W, 0x55FF0000, 0xffff0000);
 
 	case DLT_IPNET:
 		return gen_ipnet_linktype(proto);
@@ -3487,10 +3373,8 @@ gen_linktype(proto)
 	case DLT_ERF:
 		bpf_error("ERF link-layer type filtering not implemented");
 
-#ifdef DLT_PFSYNC
 	case DLT_PFSYNC:
 		bpf_error("PFSYNC link-layer type filtering not implemented");
-#endif
 
 	case DLT_LINUX_LAPD:
 		bpf_error("LAPD link-layer type filtering not implemented");
@@ -3511,6 +3395,7 @@ gen_linktype(proto)
 	case DLT_IEEE802_15_4:
 	case DLT_IEEE802_15_4_LINUX:
 	case DLT_IEEE802_15_4_NONASK_PHY:
+	case DLT_IEEE802_15_4_NOFCS:
 		bpf_error("IEEE 802.15.4 link-layer type filtering not implemented");
 
 	case DLT_IEEE802_16_MAC_CPS_RADIO:
@@ -3527,26 +3412,43 @@ gen_linktype(proto)
 
 	case DLT_AX25_KISS:
 		bpf_error("AX.25 link-layer type filtering not implemented");
+
+	case DLT_NFLOG:
+		/* Using the fixed-size NFLOG header it is possible to tell only
+		 * the address family of the packet, other meaningful data is
+		 * either missing or behind TLVs.
+		 */
+		bpf_error("NFLOG link-layer type filtering not implemented");
+
+	default:
+		/*
+		 * Does this link-layer header type have a field
+		 * indicating the type of the next protocol?  If
+		 * so, off_linktype will be the offset of that
+		 * field in the packet; if not, it will be -1.
+		 */
+		if (off_linktype != (u_int)-1) {
+			/*
+			 * Yes; assume it's an Ethernet type.  (If
+			 * it's not, it needs to be handled specially
+			 * above.)
+			 */
+			return gen_cmp(OR_LINK, off_linktype, BPF_H, (bpf_int32)proto);
+		} else {
+			/*
+			 * No; report an error.
+			 */
+			description = pcap_datalink_val_to_description(linktype);
+			if (description != NULL) {
+				bpf_error("%s link-layer type filtering not implemented",
+				    description);
+			} else {
+				bpf_error("DLT %u link-layer type filtering not implemented",
+				    linktype);
+			}
+		}
+		break;
 	}
-
-	/*
-	 * All the types that have no encapsulation should either be
-	 * handled as DLT_SLIP, DLT_SLIP_BSDOS, and DLT_RAW are, if
-	 * all packets are IP packets, or should be handled in some
-	 * special case, if none of them are (if some are and some
-	 * aren't, the lack of encapsulation is a problem, as we'd
-	 * have to find some other way of determining the packet type).
-	 *
-	 * Therefore, if "off_linktype" is -1, there's an error.
-	 */
-	if (off_linktype == (u_int)-1)
-		abort();
-
-	/*
-	 * Any type not handled above should always have an Ethernet
-	 * type at an offset of "off_linktype".
-	 */
-	return gen_cmp(OR_LINK, off_linktype, BPF_H, (bpf_int32)proto);
 }
 
 /*
@@ -3572,6 +3474,178 @@ gen_snap(orgcode, ptype)
 	snapblock[6] = (ptype >> 8);	/* upper 8 bits of protocol type */
 	snapblock[7] = (ptype >> 0);	/* lower 8 bits of protocol type */
 	return gen_bcmp(OR_MACPL, 0, 8, snapblock);
+}
+
+/*
+ * Generate code to match frames with an LLC header.
+ */
+struct block *
+gen_llc(void)
+{
+	struct block *b0, *b1;
+
+	switch (linktype) {
+
+	case DLT_EN10MB:
+		/*
+		 * We check for an Ethernet type field less than
+		 * 1500, which means it's an 802.3 length field.
+		 */
+		b0 = gen_cmp_gt(OR_LINK, off_linktype, BPF_H, ETHERMTU);
+		gen_not(b0);
+
+		/*
+		 * Now check for the purported DSAP and SSAP not being
+		 * 0xFF, to rule out NetWare-over-802.3.
+		 */
+		b1 = gen_cmp(OR_MACPL, 0, BPF_H, (bpf_int32)0xFFFF);
+		gen_not(b1);
+		gen_and(b0, b1);
+		return b1;
+
+	case DLT_SUNATM:
+		/*
+		 * We check for LLC traffic.
+		 */
+		b0 = gen_atmtype_abbrev(A_LLC);
+		return b0;
+
+	case DLT_IEEE802:	/* Token Ring */
+		/*
+		 * XXX - check for LLC frames.
+		 */
+		return gen_true();
+
+	case DLT_FDDI:
+		/*
+		 * XXX - check for LLC frames.
+		 */
+		return gen_true();
+
+	case DLT_ATM_RFC1483:
+		/*
+		 * For LLC encapsulation, these are defined to have an
+		 * 802.2 LLC header.
+		 *
+		 * For VC encapsulation, they don't, but there's no
+		 * way to check for that; the protocol used on the VC
+		 * is negotiated out of band.
+		 */
+		return gen_true();
+
+	case DLT_IEEE802_11:
+	case DLT_PRISM_HEADER:
+	case DLT_IEEE802_11_RADIO:
+	case DLT_IEEE802_11_RADIO_AVS:
+	case DLT_PPI:
+		/*
+		 * Check that we have a data frame.
+		 */
+		b0 = gen_check_802_11_data_frame();
+		return b0;
+
+	default:
+		bpf_error("'llc' not supported for linktype %d", linktype);
+		/* NOTREACHED */
+	}
+}
+
+struct block *
+gen_llc_i(void)
+{
+	struct block *b0, *b1;
+	struct slist *s;
+
+	/*
+	 * Check whether this is an LLC frame.
+	 */
+	b0 = gen_llc();
+
+	/*
+	 * Load the control byte and test the low-order bit; it must
+	 * be clear for I frames.
+	 */
+	s = gen_load_a(OR_MACPL, 2, BPF_B);
+	b1 = new_block(JMP(BPF_JSET));
+	b1->s.k = 0x01;
+	b1->stmts = s;
+	gen_not(b1);
+	gen_and(b0, b1);
+	return b1;
+}
+
+struct block *
+gen_llc_s(void)
+{
+	struct block *b0, *b1;
+
+	/*
+	 * Check whether this is an LLC frame.
+	 */
+	b0 = gen_llc();
+
+	/*
+	 * Now compare the low-order 2 bit of the control byte against
+	 * the appropriate value for S frames.
+	 */
+	b1 = gen_mcmp(OR_MACPL, 2, BPF_B, LLC_S_FMT, 0x03);
+	gen_and(b0, b1);
+	return b1;
+}
+
+struct block *
+gen_llc_u(void)
+{
+	struct block *b0, *b1;
+
+	/*
+	 * Check whether this is an LLC frame.
+	 */
+	b0 = gen_llc();
+
+	/*
+	 * Now compare the low-order 2 bit of the control byte against
+	 * the appropriate value for U frames.
+	 */
+	b1 = gen_mcmp(OR_MACPL, 2, BPF_B, LLC_U_FMT, 0x03);
+	gen_and(b0, b1);
+	return b1;
+}
+
+struct block *
+gen_llc_s_subtype(bpf_u_int32 subtype)
+{
+	struct block *b0, *b1;
+
+	/*
+	 * Check whether this is an LLC frame.
+	 */
+	b0 = gen_llc();
+
+	/*
+	 * Now check for an S frame with the appropriate type.
+	 */
+	b1 = gen_mcmp(OR_MACPL, 2, BPF_B, subtype, LLC_S_CMD_MASK);
+	gen_and(b0, b1);
+	return b1;
+}
+
+struct block *
+gen_llc_u_subtype(bpf_u_int32 subtype)
+{
+	struct block *b0, *b1;
+
+	/*
+	 * Check whether this is an LLC frame.
+	 */
+	b0 = gen_llc();
+
+	/*
+	 * Now check for a U frame with the appropriate type.
+	 */
+	b1 = gen_mcmp(OR_MACPL, 2, BPF_B, subtype, LLC_U_CMD_MASK);
+	gen_and(b0, b1);
+	return b1;
 }
 
 /*
@@ -3757,7 +3831,7 @@ gen_hostop6(addr, mask, dir, proto, src_off, dst_off)
 	gen_and(b0, b1);
 	return b1;
 }
-#endif /*INET6*/
+#endif
 
 static struct block *
 gen_ehostop(eaddr, dir)
@@ -3785,6 +3859,30 @@ gen_ehostop(eaddr, dir)
 		b1 = gen_ehostop(eaddr, Q_DST);
 		gen_or(b0, b1);
 		return b1;
+
+	case Q_ADDR1:
+		bpf_error("'addr1' is only supported on 802.11 with 802.11 headers");
+		break;
+
+	case Q_ADDR2:
+		bpf_error("'addr2' is only supported on 802.11 with 802.11 headers");
+		break;
+
+	case Q_ADDR3:
+		bpf_error("'addr3' is only supported on 802.11 with 802.11 headers");
+		break;
+
+	case Q_ADDR4:
+		bpf_error("'addr4' is only supported on 802.11 with 802.11 headers");
+		break;
+
+	case Q_RA:
+		bpf_error("'ra' is only supported on 802.11 with 802.11 headers");
+		break;
+
+	case Q_TA:
+		bpf_error("'ta' is only supported on 802.11 with 802.11 headers");
+		break;
 	}
 	abort();
 	/* NOTREACHED */
@@ -3802,18 +3900,10 @@ gen_fhostop(eaddr, dir)
 
 	switch (dir) {
 	case Q_SRC:
-#ifdef PCAP_FDDIPAD
 		return gen_bcmp(OR_LINK, 6 + 1 + pcap_fddipad, 6, eaddr);
-#else
-		return gen_bcmp(OR_LINK, 6 + 1, 6, eaddr);
-#endif
 
 	case Q_DST:
-#ifdef PCAP_FDDIPAD
 		return gen_bcmp(OR_LINK, 0 + 1 + pcap_fddipad, 6, eaddr);
-#else
-		return gen_bcmp(OR_LINK, 0 + 1, 6, eaddr);
-#endif
 
 	case Q_AND:
 		b0 = gen_fhostop(eaddr, Q_SRC);
@@ -3827,6 +3917,30 @@ gen_fhostop(eaddr, dir)
 		b1 = gen_fhostop(eaddr, Q_DST);
 		gen_or(b0, b1);
 		return b1;
+
+	case Q_ADDR1:
+		bpf_error("'addr1' is only supported on 802.11");
+		break;
+
+	case Q_ADDR2:
+		bpf_error("'addr2' is only supported on 802.11");
+		break;
+
+	case Q_ADDR3:
+		bpf_error("'addr3' is only supported on 802.11");
+		break;
+
+	case Q_ADDR4:
+		bpf_error("'addr4' is only supported on 802.11");
+		break;
+
+	case Q_RA:
+		bpf_error("'ra' is only supported on 802.11");
+		break;
+
+	case Q_TA:
+		bpf_error("'ta' is only supported on 802.11");
+		break;
 	}
 	abort();
 	/* NOTREACHED */
@@ -3861,6 +3975,30 @@ gen_thostop(eaddr, dir)
 		b1 = gen_thostop(eaddr, Q_DST);
 		gen_or(b0, b1);
 		return b1;
+
+	case Q_ADDR1:
+		bpf_error("'addr1' is only supported on 802.11");
+		break;
+
+	case Q_ADDR2:
+		bpf_error("'addr2' is only supported on 802.11");
+		break;
+
+	case Q_ADDR3:
+		bpf_error("'addr3' is only supported on 802.11");
+		break;
+
+	case Q_ADDR4:
+		bpf_error("'addr4' is only supported on 802.11");
+		break;
+
+	case Q_RA:
+		bpf_error("'ra' is only supported on 802.11");
+		break;
+
+	case Q_TA:
+		bpf_error("'ta' is only supported on 802.11");
+		break;
 	}
 	abort();
 	/* NOTREACHED */
@@ -4154,8 +4292,79 @@ gen_wlanhostop(eaddr, dir)
 		gen_and(b1, b0);
 		return b0;
 
+	case Q_RA:
+		/*
+		 * Not present in management frames; addr1 in other
+		 * frames.
+		 */
+
+		/*
+		 * If the high-order bit of the type value is 0, this
+		 * is a management frame.
+		 * I.e, check "(link[0] & 0x08)".
+		 */
+		s = gen_load_a(OR_LINK, 0, BPF_B);
+		b1 = new_block(JMP(BPF_JSET));
+		b1->s.k = 0x08;
+		b1->stmts = s;
+
+		/*
+		 * Check addr1.
+		 */
+		b0 = gen_bcmp(OR_LINK, 4, 6, eaddr);
+
+		/*
+		 * AND that with the check of addr1.
+		 */
+		gen_and(b1, b0);
+		return (b0);
+
+	case Q_TA:
+		/*
+		 * Not present in management frames; addr2, if present,
+		 * in other frames.
+		 */
+
+		/*
+		 * Not present in CTS or ACK control frames.
+		 */
+		b0 = gen_mcmp(OR_LINK, 0, BPF_B, IEEE80211_FC0_TYPE_CTL,
+			IEEE80211_FC0_TYPE_MASK);
+		gen_not(b0);
+		b1 = gen_mcmp(OR_LINK, 0, BPF_B, IEEE80211_FC0_SUBTYPE_CTS,
+			IEEE80211_FC0_SUBTYPE_MASK);
+		gen_not(b1);
+		b2 = gen_mcmp(OR_LINK, 0, BPF_B, IEEE80211_FC0_SUBTYPE_ACK,
+			IEEE80211_FC0_SUBTYPE_MASK);
+		gen_not(b2);
+		gen_and(b1, b2);
+		gen_or(b0, b2);
+
+		/*
+		 * If the high-order bit of the type value is 0, this
+		 * is a management frame.
+		 * I.e, check "(link[0] & 0x08)".
+		 */
+		s = gen_load_a(OR_LINK, 0, BPF_B);
+		b1 = new_block(JMP(BPF_JSET));
+		b1->s.k = 0x08;
+		b1->stmts = s;
+
+		/*
+		 * AND that with the check for frames other than
+		 * CTS and ACK frames.
+		 */
+		gen_and(b1, b2);
+
+		/*
+		 * Check addr2.
+		 */
+		b1 = gen_bcmp(OR_LINK, 10, 6, eaddr);
+		gen_and(b2, b1);
+		return b1;
+
 	/*
-	 * XXX - add RA, TA, and BSSID keywords?
+	 * XXX - add BSSID keyword?
 	 */
 	case Q_ADDR1:
 		return (gen_bcmp(OR_LINK, 4, 6, eaddr));
@@ -4251,6 +4460,30 @@ gen_ipfchostop(eaddr, dir)
 		b1 = gen_ipfchostop(eaddr, Q_DST);
 		gen_or(b0, b1);
 		return b1;
+
+	case Q_ADDR1:
+		bpf_error("'addr1' is only supported on 802.11");
+		break;
+
+	case Q_ADDR2:
+		bpf_error("'addr2' is only supported on 802.11");
+		break;
+
+	case Q_ADDR3:
+		bpf_error("'addr3' is only supported on 802.11");
+		break;
+
+	case Q_ADDR4:
+		bpf_error("'addr4' is only supported on 802.11");
+		break;
+
+	case Q_RA:
+		bpf_error("'ra' is only supported on 802.11");
+		break;
+
+	case Q_TA:
+		bpf_error("'ta' is only supported on 802.11");
+		break;
 	}
 	abort();
 	/* NOTREACHED */
@@ -4365,7 +4598,7 @@ gen_mpls_linktype(proto)
                 b1 = gen_mcmp(OR_NET, 0, BPF_B, 0x40, 0xf0);
                 gen_and(b0, b1);
                 return b1;
- 
+
        case Q_IPV6:
                 /* match the bottom-of-stack bit */
                 b0 = gen_mcmp(OR_NET, -2, BPF_B, 0x01, 0x01);
@@ -4373,7 +4606,7 @@ gen_mpls_linktype(proto)
                 b1 = gen_mcmp(OR_NET, 0, BPF_B, 0x60, 0xf0);
                 gen_and(b0, b1);
                 return b1;
- 
+
        default:
                 abort();
         }
@@ -4444,6 +4677,9 @@ gen_host(addr, mask, proto, dir, type)
 	case Q_VRRP:
 		bpf_error("'vrrp' modifier applied to %s", typestr);
 
+	case Q_CARP:
+		bpf_error("'carp' modifier applied to %s", typestr);
+
 	case Q_ATALK:
 		bpf_error("ATALK host filtering not implemented");
 
@@ -4465,13 +4701,11 @@ gen_host(addr, mask, proto, dir, type)
 	case Q_MOPRC:
 		bpf_error("MOPRC host filtering not implemented");
 
-#ifdef INET6
 	case Q_IPV6:
 		bpf_error("'ip6' modifier applied to ip host");
 
 	case Q_ICMPV6:
 		bpf_error("'icmp6' modifier applied to %s", typestr);
-#endif /* INET6 */
 
 	case Q_AH:
 		bpf_error("'ah' modifier applied to %s", typestr);
@@ -4530,6 +4764,9 @@ gen_host6(addr, mask, proto, dir, type)
 	case Q_DEFAULT:
 		return gen_host6(addr, mask, Q_IPV6, dir, type);
 
+	case Q_LINK:
+		bpf_error("link-layer modifier applied to ip6 %s", typestr);
+
 	case Q_IP:
 		bpf_error("'ip' modifier applied to ip6 %s", typestr);
 
@@ -4562,6 +4799,9 @@ gen_host6(addr, mask, proto, dir, type)
 
 	case Q_VRRP:
 		bpf_error("'vrrp' modifier applied to %s", typestr);
+
+	case Q_CARP:
+		bpf_error("'carp' modifier applied to %s", typestr);
 
 	case Q_ATALK:
 		bpf_error("ATALK host filtering not implemented");
@@ -4625,7 +4865,7 @@ gen_host6(addr, mask, proto, dir, type)
 	}
 	/* NOTREACHED */
 }
-#endif /*INET6*/
+#endif
 
 #ifndef INET6
 static struct block *
@@ -4647,6 +4887,8 @@ gen_gateway(eaddr, alist, proto, dir)
 	case Q_RARP:
 		switch (linktype) {
 		case DLT_EN10MB:
+		case DLT_NETANALYZER:
+		case DLT_NETANALYZER_TRANSPARENT:
 			b0 = gen_ehostop(eaddr, Q_OR);
 			break;
 		case DLT_FDDI:
@@ -4715,26 +4957,20 @@ gen_proto_abbrev(proto)
 
 	case Q_SCTP:
 		b1 = gen_proto(IPPROTO_SCTP, Q_IP, Q_DEFAULT);
-#ifdef INET6
 		b0 = gen_proto(IPPROTO_SCTP, Q_IPV6, Q_DEFAULT);
 		gen_or(b0, b1);
-#endif
 		break;
 
 	case Q_TCP:
 		b1 = gen_proto(IPPROTO_TCP, Q_IP, Q_DEFAULT);
-#ifdef INET6
 		b0 = gen_proto(IPPROTO_TCP, Q_IPV6, Q_DEFAULT);
 		gen_or(b0, b1);
-#endif
 		break;
 
 	case Q_UDP:
 		b1 = gen_proto(IPPROTO_UDP, Q_IP, Q_DEFAULT);
-#ifdef INET6
 		b0 = gen_proto(IPPROTO_UDP, Q_IPV6, Q_DEFAULT);
 		gen_or(b0, b1);
-#endif
 		break;
 
 	case Q_ICMP:
@@ -4762,10 +4998,8 @@ gen_proto_abbrev(proto)
 
 	case Q_PIM:
 		b1 = gen_proto(IPPROTO_PIM, Q_IP, Q_DEFAULT);
-#ifdef INET6
 		b0 = gen_proto(IPPROTO_PIM, Q_IPV6, Q_DEFAULT);
 		gen_or(b0, b1);
-#endif
 		break;
 
 #ifndef IPPROTO_VRRP
@@ -4774,6 +5008,14 @@ gen_proto_abbrev(proto)
 
 	case Q_VRRP:
 		b1 = gen_proto(IPPROTO_VRRP, Q_IP, Q_DEFAULT);
+		break;
+
+#ifndef IPPROTO_CARP
+#define IPPROTO_CARP	112
+#endif
+
+	case Q_CARP:
+		b1 = gen_proto(IPPROTO_CARP, Q_IP, Q_DEFAULT);
 		break;
 
 	case Q_IP:
@@ -4819,7 +5061,6 @@ gen_proto_abbrev(proto)
 		b1 =  gen_linktype(ETHERTYPE_MOPRC);
 		break;
 
-#ifdef INET6
 	case Q_IPV6:
 		b1 = gen_linktype(ETHERTYPE_IPV6);
 		break;
@@ -4830,17 +5071,14 @@ gen_proto_abbrev(proto)
 	case Q_ICMPV6:
 		b1 = gen_proto(IPPROTO_ICMPV6, Q_IPV6, Q_DEFAULT);
 		break;
-#endif /* INET6 */
 
 #ifndef IPPROTO_AH
 #define IPPROTO_AH	51
 #endif
 	case Q_AH:
 		b1 = gen_proto(IPPROTO_AH, Q_IP, Q_DEFAULT);
-#ifdef INET6
 		b0 = gen_proto(IPPROTO_AH, Q_IPV6, Q_DEFAULT);
 		gen_or(b0, b1);
-#endif
 		break;
 
 #ifndef IPPROTO_ESP
@@ -4848,10 +5086,8 @@ gen_proto_abbrev(proto)
 #endif
 	case Q_ESP:
 		b1 = gen_proto(IPPROTO_ESP, Q_IP, Q_DEFAULT);
-#ifdef INET6
 		b0 = gen_proto(IPPROTO_ESP, Q_IPV6, Q_DEFAULT);
 		gen_or(b0, b1);
-#endif
 		break;
 
 	case Q_ISO:
@@ -4957,7 +5193,7 @@ gen_ipfrag()
 	struct slist *s;
 	struct block *b;
 
-	/* not ip frag */
+	/* not IPv4 frag other than the first frag */
 	s = gen_load_a(OR_NET, 6, BPF_H);
 	b = new_block(JMP(BPF_JSET));
 	b->s.k = 0x1fff;
@@ -4984,7 +5220,6 @@ gen_portatom(off, v)
 	return gen_cmp(OR_TRAN_IPV4, off, BPF_H, v);
 }
 
-#ifdef INET6
 static struct block *
 gen_portatom6(off, v)
 	int off;
@@ -4992,7 +5227,6 @@ gen_portatom6(off, v)
 {
 	return gen_cmp(OR_TRAN_IPV6, off, BPF_H, v);
 }
-#endif/*INET6*/
 
 struct block *
 gen_portop(port, proto, dir)
@@ -5000,7 +5234,7 @@ gen_portop(port, proto, dir)
 {
 	struct block *b0, *b1, *tmp;
 
-	/* ip proto 'proto' */
+	/* ip proto 'proto' and not a fragment other than the first fragment */
 	tmp = gen_cmp(OR_NET, 9, BPF_B, (bpf_int32)proto);
 	b0 = gen_ipfrag();
 	gen_and(tmp, b0);
@@ -5084,7 +5318,6 @@ gen_port(port, ip_proto, dir)
 	return b1;
 }
 
-#ifdef INET6
 struct block *
 gen_portop6(port, proto, dir)
 	int port, proto, dir;
@@ -5092,6 +5325,7 @@ gen_portop6(port, proto, dir)
 	struct block *b0, *b1, *tmp;
 
 	/* ip6 proto 'proto' */
+	/* XXX - catch the first fragment of a fragmented packet? */
 	b0 = gen_cmp(OR_NET, 6, BPF_B, (bpf_int32)proto);
 
 	switch (dir) {
@@ -5156,7 +5390,6 @@ gen_port6(port, ip_proto, dir)
 	gen_and(b0, b1);
 	return b1;
 }
-#endif /* INET6 */
 
 /* gen_portrange code */
 static struct block *
@@ -5180,7 +5413,7 @@ gen_portrangeatom(off, v1, v2)
 	b1 = gen_cmp_ge(OR_TRAN_IPV4, off, BPF_H, v1);
 	b2 = gen_cmp_le(OR_TRAN_IPV4, off, BPF_H, v2);
 
-	gen_and(b1, b2); 
+	gen_and(b1, b2);
 
 	return b2;
 }
@@ -5193,7 +5426,7 @@ gen_portrangeop(port1, port2, proto, dir)
 {
 	struct block *b0, *b1, *tmp;
 
-	/* ip proto 'proto' */
+	/* ip proto 'proto' and not a fragment other than the first fragment */
 	tmp = gen_cmp(OR_NET, 9, BPF_B, (bpf_int32)proto);
 	b0 = gen_ipfrag();
 	gen_and(tmp, b0);
@@ -5261,7 +5494,6 @@ gen_portrange(port1, port2, ip_proto, dir)
 	return b1;
 }
 
-#ifdef INET6
 static struct block *
 gen_portrangeatom6(off, v1, v2)
 	int off;
@@ -5283,7 +5515,7 @@ gen_portrangeatom6(off, v1, v2)
 	b1 = gen_cmp_ge(OR_TRAN_IPV6, off, BPF_H, v1);
 	b2 = gen_cmp_le(OR_TRAN_IPV6, off, BPF_H, v2);
 
-	gen_and(b1, b2); 
+	gen_and(b1, b2);
 
 	return b2;
 }
@@ -5297,6 +5529,7 @@ gen_portrangeop6(port1, port2, proto, dir)
 	struct block *b0, *b1, *tmp;
 
 	/* ip6 proto 'proto' */
+	/* XXX - catch the first fragment of a fragmented packet? */
 	b0 = gen_cmp(OR_NET, 6, BPF_B, (bpf_int32)proto);
 
 	switch (dir) {
@@ -5361,7 +5594,6 @@ gen_portrange6(port1, port2, ip_proto, dir)
 	gen_and(b0, b1);
 	return b1;
 }
-#endif /* INET6 */
 
 static int
 lookup_proto(name, proto)
@@ -5496,7 +5728,7 @@ gen_protochain(v, proto, dir)
 		s[i]->s.k = off_macpl + off_nl;
 		i++;
 		break;
-#ifdef INET6
+
 	case Q_IPV6:
 		b0 = gen_linktype(ETHERTYPE_IPV6);
 
@@ -5509,7 +5741,7 @@ gen_protochain(v, proto, dir)
 		s[i]->s.k = 40;
 		i++;
 		break;
-#endif
+
 	default:
 		bpf_error("unsupported proto to gen_protochain");
 		/*NOTREACHED*/
@@ -5536,7 +5768,6 @@ gen_protochain(v, proto, dir)
 	fix2 = i;
 	i++;
 
-#ifdef INET6
 	if (proto == Q_IPV6) {
 		int v6start, v6end, v6advance, j;
 
@@ -5574,12 +5805,9 @@ gen_protochain(v, proto, dir)
 
 		/*
 		 * in short,
-		 * A = P[X];
-		 * X = X + (P[X + 1] + 1) * 8;
+		 * A = P[X + packet head];
+		 * X = X + (P[X + packet head + 1] + 1) * 8;
 		 */
-		/* A = X */
-		s[i] = new_stmt(BPF_MISC|BPF_TXA);
-		i++;
 		/* A = P[X + packet head] */
 		s[i] = new_stmt(BPF_LD|BPF_IND|BPF_B);
 		s[i]->s.k = off_macpl + off_nl;
@@ -5588,19 +5816,9 @@ gen_protochain(v, proto, dir)
 		s[i] = new_stmt(BPF_ST);
 		s[i]->s.k = reg2;
 		i++;
-		/* A = X */
-		s[i] = new_stmt(BPF_MISC|BPF_TXA);
-		i++;
-		/* A += 1 */
-		s[i] = new_stmt(BPF_ALU|BPF_ADD|BPF_K);
-		s[i]->s.k = 1;
-		i++;
-		/* X = A */
-		s[i] = new_stmt(BPF_MISC|BPF_TAX);
-		i++;
-		/* A = P[X + packet head]; */
+		/* A = P[X + packet head + 1]; */
 		s[i] = new_stmt(BPF_LD|BPF_IND|BPF_B);
-		s[i]->s.k = off_macpl + off_nl;
+		s[i]->s.k = off_macpl + off_nl + 1;
 		i++;
 		/* A += 1 */
 		s[i] = new_stmt(BPF_ALU|BPF_ADD|BPF_K);
@@ -5609,6 +5827,10 @@ gen_protochain(v, proto, dir)
 		/* A *= 8 */
 		s[i] = new_stmt(BPF_ALU|BPF_MUL|BPF_K);
 		s[i]->s.k = 8;
+		i++;
+		/* A += X */
+		s[i] = new_stmt(BPF_ALU|BPF_ADD|BPF_X);
+		s[i]->s.k = 0;
 		i++;
 		/* X = A; */
 		s[i] = new_stmt(BPF_MISC|BPF_TAX);
@@ -5627,9 +5849,7 @@ gen_protochain(v, proto, dir)
 		/* fixup */
 		for (j = v6start; j <= v6end; j++)
 			s[j]->s.jt = s[v6advance];
-	} else
-#endif
-	{
+	} else {
 		/* nop */
 		s[i] = new_stmt(BPF_ALU|BPF_ADD|BPF_K);
 		s[i]->s.k = 0;
@@ -5745,7 +5965,7 @@ gen_check_802_11_data_frame()
 	b0 = new_block(JMP(BPF_JSET));
 	b0->s.k = 0x08;
 	b0->stmts = s;
-	
+
 	s = gen_load_a(OR_LINK, 0, BPF_B);
 	b1 = new_block(JMP(BPF_JSET));
 	b1->s.k = 0x04;
@@ -5773,20 +5993,20 @@ gen_proto(v, proto, dir)
 	int dir;
 {
 	struct block *b0, *b1;
+#ifndef CHASE_CHAIN
+	struct block *b2;
+#endif
 
 	if (dir != Q_DEFAULT)
 		bpf_error("direction applied to 'proto'");
 
 	switch (proto) {
 	case Q_DEFAULT:
-#ifdef INET6
 		b0 = gen_proto(v, Q_IP, dir);
 		b1 = gen_proto(v, Q_IPV6, dir);
 		gen_or(b0, b1);
 		return b1;
-#else
-		/*FALLTHROUGH*/
-#endif
+
 	case Q_IP:
 		/*
 		 * For FDDI, RFC 1188 says that SNAP encapsulation is used,
@@ -5933,11 +6153,22 @@ gen_proto(v, proto, dir)
 		bpf_error("'vrrp proto' is bogus");
 		/* NOTREACHED */
 
-#ifdef INET6
+	case Q_CARP:
+		bpf_error("'carp proto' is bogus");
+		/* NOTREACHED */
+
 	case Q_IPV6:
 		b0 = gen_linktype(ETHERTYPE_IPV6);
 #ifndef CHASE_CHAIN
-		b1 = gen_cmp(OR_NET, 6, BPF_B, (bpf_int32)v);
+		/*
+		 * Also check for a fragment header before the final
+		 * header.
+		 */
+		b2 = gen_cmp(OR_NET, 6, BPF_B, IPPROTO_FRAGMENT);
+		b1 = gen_cmp(OR_NET, 40, BPF_B, (bpf_int32)v);
+		gen_and(b2, b1);
+		b2 = gen_cmp(OR_NET, 6, BPF_B, (bpf_int32)v);
+		gen_or(b2, b1);
 #else
 		b1 = gen_protochain(v, Q_IPV6);
 #endif
@@ -5946,7 +6177,6 @@ gen_proto(v, proto, dir)
 
 	case Q_ICMPV6:
 		bpf_error("'icmp6 proto' is bogus");
-#endif /* INET6 */
 
 	case Q_AH:
 		bpf_error("'ah proto' is bogus");
@@ -6016,6 +6246,8 @@ gen_scode(name, q)
 			switch (linktype) {
 
 			case DLT_EN10MB:
+			case DLT_NETANALYZER:
+			case DLT_NETANALYZER_TRANSPARENT:
 				eaddr = pcap_ether_hostton(name);
 				if (eaddr == NULL)
 					bpf_error(
@@ -6197,19 +6429,19 @@ gen_scode(name, q)
 				/* override PROTO_UNDEF */
 				real_proto = IPPROTO_SCTP;
 		}
-#ifndef INET6
-		return gen_port(port, real_proto, dir);
-#else
+		if (port < 0)
+			bpf_error("illegal port number %d < 0", port);
+		if (port > 65535)
+			bpf_error("illegal port number %d > 65535", port);
 		b = gen_port(port, real_proto, dir);
 		gen_or(gen_port6(port, real_proto, dir), b);
 		return b;
-#endif /* INET6 */
 
 	case Q_PORTRANGE:
 		if (proto != Q_DEFAULT &&
 		    proto != Q_UDP && proto != Q_TCP && proto != Q_SCTP)
 			bpf_error("illegal qualifier of 'portrange'");
-		if (pcap_nametoportrange(name, &port1, &port2, &real_proto) == 0) 
+		if (pcap_nametoportrange(name, &port1, &port2, &real_proto) == 0)
 			bpf_error("unknown port in range '%s'", name);
 		if (proto == Q_UDP) {
 			if (real_proto == IPPROTO_TCP)
@@ -6236,15 +6468,20 @@ gen_scode(name, q)
 				bpf_error("port in range '%s' is tcp", name);
 			else
 				/* override PROTO_UNDEF */
-				real_proto = IPPROTO_SCTP;	
+				real_proto = IPPROTO_SCTP;
 		}
-#ifndef INET6
-		return gen_portrange(port1, port2, real_proto, dir);
-#else
+		if (port1 < 0)
+			bpf_error("illegal port number %d < 0", port1);
+		if (port1 > 65535)
+			bpf_error("illegal port number %d > 65535", port1);
+		if (port2 < 0)
+			bpf_error("illegal port number %d < 0", port2);
+		if (port2 > 65535)
+			bpf_error("illegal port number %d > 65535", port2);
+
 		b = gen_portrange(port1, port2, real_proto, dir);
 		gen_or(gen_portrange6(port1, port2, real_proto, dir), b);
 		return b;
-#endif /* INET6 */
 
 	case Q_GATEWAY:
 #ifndef INET6
@@ -6389,16 +6626,15 @@ gen_ncode(s, v, q)
 		else
 			bpf_error("illegal qualifier of 'port'");
 
-#ifndef INET6
-		return gen_port((int)v, proto, dir);
-#else
+		if (v > 65535)
+			bpf_error("illegal port number %u > 65535", v);
+
 	    {
 		struct block *b;
 		b = gen_port((int)v, proto, dir);
 		gen_or(gen_port6((int)v, proto, dir), b);
 		return b;
 	    }
-#endif /* INET6 */
 
 	case Q_PORTRANGE:
 		if (proto == Q_UDP)
@@ -6412,16 +6648,15 @@ gen_ncode(s, v, q)
 		else
 			bpf_error("illegal qualifier of 'portrange'");
 
-#ifndef INET6
-		return gen_portrange((int)v, (int)v, proto, dir);
-#else
+		if (v > 65535)
+			bpf_error("illegal port number %u > 65535", v);
+
 	    {
 		struct block *b;
 		b = gen_portrange((int)v, (int)v, proto, dir);
 		gen_or(gen_portrange6((int)v, (int)v, proto, dir), b);
 		return b;
 	    }
-#endif /* INET6 */
 
 	case Q_GATEWAY:
 		bpf_error("'gateway' requires a name");
@@ -6516,6 +6751,8 @@ gen_ecode(eaddr, q)
 	if ((q.addr == Q_HOST || q.addr == Q_DEFAULT) && q.proto == Q_LINK) {
 		switch (linktype) {
 		case DLT_EN10MB:
+		case DLT_NETANALYZER:
+		case DLT_NETANALYZER_TRANSPARENT:
 			return gen_ehostop(eaddr, (int)q.dir);
 		case DLT_FDDI:
 			return gen_fhostop(eaddr, (int)q.dir);
@@ -6645,7 +6882,7 @@ gen_load(proto, inst, size)
 
 		/*
 		 * Load into the X register the offset computed into the
-		 * register specifed by "index".
+		 * register specified by "index".
 		 */
 		s = xfer_to_x(inst);
 
@@ -6677,7 +6914,7 @@ gen_load(proto, inst, size)
 		 * the link-layer header.  Add to it the offset computed
 		 * into the register specified by "index", and move that
 		 * into the X register.  Otherwise, just load into the X
-		 * register the offset computed into the register specifed
+		 * register the offset computed into the register specified
 		 * by "index".
 		 */
 		if (s != NULL) {
@@ -6709,9 +6946,7 @@ gen_load(proto, inst, size)
 	case Q_LAT:
 	case Q_MOPRC:
 	case Q_MOPDL:
-#ifdef INET6
 	case Q_IPV6:
-#endif
 		/*
 		 * The offset is relative to the beginning of
 		 * the network-layer header.
@@ -6726,7 +6961,7 @@ gen_load(proto, inst, size)
 		 * payload.  Add to it the offset computed into the
 		 * register specified by "index", and move that into
 		 * the X register.  Otherwise, just load into the X
-		 * register the offset computed into the register specifed
+		 * register the offset computed into the register specified
 		 * by "index".
 		 */
 		if (s != NULL) {
@@ -6771,6 +7006,7 @@ gen_load(proto, inst, size)
 	case Q_IGRP:
 	case Q_PIM:
 	case Q_VRRP:
+	case Q_CARP:
 		/*
 		 * The offset is relative to the beginning of
 		 * the transport-layer header.
@@ -6819,16 +7055,12 @@ gen_load(proto, inst, size)
 		gen_and(gen_proto_abbrev(proto), b = gen_ipfrag());
 		if (inst->b)
 			gen_and(inst->b, b);
-#ifdef INET6
 		gen_and(gen_proto_abbrev(Q_IP), b);
-#endif
 		inst->b = b;
 		break;
-#ifdef INET6
 	case Q_ICMPV6:
 		bpf_error("IPv6 upper-layer protocol is not supported by proto[x]");
 		/*NOTREACHED*/
-#endif
 	}
 	inst->regno = regno;
 	s = new_stmt(BPF_ST);
@@ -7119,6 +7351,8 @@ gen_broadcast(proto)
 		case DLT_ARCNET_LINUX:
 			return gen_ahostop(abroadcast, Q_DST);
 		case DLT_EN10MB:
+		case DLT_NETANALYZER:
+		case DLT_NETANALYZER_TRANSPARENT:
 			return gen_ehostop(ebroadcast, Q_DST);
 		case DLT_FDDI:
 			return gen_fhostop(ebroadcast, Q_DST);
@@ -7214,6 +7448,8 @@ gen_multicast(proto)
 			/* all ARCnet multicasts use the same address */
 			return gen_ahostop(abroadcast, Q_DST);
 		case DLT_EN10MB:
+		case DLT_NETANALYZER:
+		case DLT_NETANALYZER_TRANSPARENT:
 			/* ether[0] & 1 != 0 */
 			return gen_mac_multicast(0);
 		case DLT_FDDI:
@@ -7376,13 +7612,11 @@ gen_multicast(proto)
 		gen_and(b0, b1);
 		return b1;
 
-#ifdef INET6
 	case Q_IPV6:
 		b0 = gen_linktype(ETHERTYPE_IPV6);
 		b1 = gen_cmp(OR_NET, 24, BPF_B, (bpf_int32)255);
 		gen_and(b0, b1);
 		return b1;
-#endif /* INET6 */
 	}
 	bpf_error("link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel");
 	/* NOTREACHED */
@@ -7390,9 +7624,13 @@ gen_multicast(proto)
 }
 
 /*
- * generate command for inbound/outbound.  It's here so we can
- * make it link-type specific.  'dir' = 0 implies "inbound",
- * = 1 implies "outbound".
+ * Filter on inbound (dir == 0) or outbound (dir == 1) traffic.
+ * Outbound traffic is sent by this machine, while inbound traffic is
+ * sent by a remote machine (and may include packets destined for a
+ * unicast or multicast link-layer address we are not subscribing to).
+ * These are the same definitions implemented by pcap_setdirection().
+ * Capturing only unicast traffic destined for this host is probably
+ * better accomplished using a higher-layer filter.
  */
 struct block *
 gen_inbound(dir)
@@ -7422,23 +7660,11 @@ gen_inbound(dir)
 		break;
 
 	case DLT_LINUX_SLL:
-		if (dir) {
-			/*
-			 * Match packets sent by this machine.
-			 */
-			b0 = gen_cmp(OR_LINK, 0, BPF_H, LINUX_SLL_OUTGOING);
-		} else {
-			/*
-			 * Match packets sent to this machine.
-			 * (No broadcast or multicast packets, or
-			 * packets sent to some other machine and
-			 * received promiscuously.)
-			 *
-			 * XXX - packets sent to other machines probably
-			 * shouldn't be matched, but what about broadcast
-			 * or multicast packets we received?
-			 */
-			b0 = gen_cmp(OR_LINK, 0, BPF_H, LINUX_SLL_HOST);
+		/* match outgoing packets */
+		b0 = gen_cmp(OR_LINK, 0, BPF_H, LINUX_SLL_OUTGOING);
+		if (!dir) {
+			/* to filter on inbound traffic, invert the match */
+			gen_not(b0);
 		}
 		break;
 
@@ -7477,6 +7703,11 @@ gen_inbound(dir)
         case DLT_JUNIPER_VP:
         case DLT_JUNIPER_ST:
         case DLT_JUNIPER_ISM:
+        case DLT_JUNIPER_VS:
+        case DLT_JUNIPER_SRX_E2E:
+        case DLT_JUNIPER_FIBRECHANNEL:
+	case DLT_JUNIPER_ATM_CEMIC:
+
 		/* juniper flags (including direction) are stored
 		 * the byte after the 3-byte magic number */
 		if (dir) {
@@ -7489,10 +7720,38 @@ gen_inbound(dir)
 		break;
 
 	default:
+		/*
+		 * If we have packet meta-data indicating a direction,
+		 * check it, otherwise give up as this link-layer type
+		 * has nothing in the packet data.
+		 */
+#if defined(linux) && defined(PF_PACKET) && defined(SO_ATTACH_FILTER)
+		/*
+		 * This is Linux with PF_PACKET support.
+		 * If this is a *live* capture, we can look at
+		 * special meta-data in the filter expression;
+		 * if it's a savefile, we can't.
+		 */
+		if (bpf_pcap->rfile != NULL) {
+			/* We have a FILE *, so this is a savefile */
+			bpf_error("inbound/outbound not supported on linktype %d when reading savefiles",
+			    linktype);
+			b0 = NULL;
+			/* NOTREACHED */
+		}
+		/* match outgoing packets */
+		b0 = gen_cmp(OR_LINK, SKF_AD_OFF + SKF_AD_PKTTYPE, BPF_H,
+		             PACKET_OUTGOING);
+		if (!dir) {
+			/* to filter on inbound traffic, invert the match */
+			gen_not(b0);
+		}
+#else /* defined(linux) && defined(PF_PACKET) && defined(SO_ATTACH_FILTER) */
 		bpf_error("inbound/outbound not supported on linktype %d",
 		    linktype);
 		b0 = NULL;
 		/* NOTREACHED */
+#endif /* defined(linux) && defined(PF_PACKET) && defined(SO_ATTACH_FILTER) */
 	}
 	return (b0);
 }
@@ -7757,6 +8016,30 @@ gen_ahostop(eaddr, dir)
 		b1 = gen_ahostop(eaddr, Q_DST);
 		gen_or(b0, b1);
 		return b1;
+
+	case Q_ADDR1:
+		bpf_error("'addr1' is only supported on 802.11");
+		break;
+
+	case Q_ADDR2:
+		bpf_error("'addr2' is only supported on 802.11");
+		break;
+
+	case Q_ADDR3:
+		bpf_error("'addr3' is only supported on 802.11");
+		break;
+
+	case Q_ADDR4:
+		bpf_error("'addr4' is only supported on 802.11");
+		break;
+
+	case Q_RA:
+		bpf_error("'ra' is only supported on 802.11");
+		break;
+
+	case Q_TA:
+		bpf_error("'ta' is only supported on 802.11");
+		break;
 	}
 	abort();
 	/* NOTREACHED */
@@ -7811,9 +8094,15 @@ gen_vlan(vlan_num)
 	switch (linktype) {
 
 	case DLT_EN10MB:
-		/* check for VLAN */
+	case DLT_NETANALYZER:
+	case DLT_NETANALYZER_TRANSPARENT:
+		/* check for VLAN, including QinQ */
 		b0 = gen_cmp(OR_LINK, off_linktype, BPF_H,
 		    (bpf_int32)ETHERTYPE_8021Q);
+		b1 = gen_cmp(OR_LINK, off_linktype, BPF_H,
+		    (bpf_int32)ETHERTYPE_8021QINQ);
+		gen_or(b0,b1);
+		b0 = b1;
 
 		/* If a specific VLAN is requested, check VLAN id */
 		if (vlan_num >= 0) {
@@ -7871,20 +8160,22 @@ gen_mpls(label_num)
              * etc.
              */
             switch (linktype) {
-                
+
             case DLT_C_HDLC: /* fall through */
             case DLT_EN10MB:
+            case DLT_NETANALYZER:
+            case DLT_NETANALYZER_TRANSPARENT:
                     b0 = gen_linktype(ETHERTYPE_MPLS);
                     break;
-                
+
             case DLT_PPP:
                     b0 = gen_linktype(PPP_MPLS_UCAST);
                     break;
-                
+
                     /* FIXME add other DLT_s ...
                      * for Frame-Relay/and ATM this may get messy due to SNAP headers
                      * leave it for now */
-                
+
             default:
                     bpf_error("no MPLS support for data link type %d",
                           linktype);
@@ -7920,9 +8211,10 @@ gen_pppoed()
 }
 
 struct block *
-gen_pppoes()
+gen_pppoes(sess_num)
+	int sess_num;
 {
-	struct block *b0;
+	struct block *b0, *b1;
 
 	/*
 	 * Test against the PPPoE session link-layer type.
@@ -7961,6 +8253,14 @@ gen_pppoes()
 	orig_linktype = off_linktype;	/* save original values */
 	orig_nl = off_nl;
 	is_pppoes = 1;
+
+	/* If a specific session is requested, check PPPoE session id */
+	if (sess_num >= 0) {
+		b1 = gen_mcmp(OR_MACPL, orig_nl, BPF_W,
+		    (bpf_int32)sess_num, 0x0000ffff);
+		gen_and(b0, b1);
+		b0 = b1;
+	}
 
 	/*
 	 * The "network-layer" protocol is PPPoE, which has a 6-byte
@@ -8146,11 +8446,12 @@ gen_atmtype_abbrev(type)
 	return b1;
 }
 
-/* 
+/*
  * Filtering for MTP2 messages based on li value
  * FISU, length is null
  * LSSU, length is 1 or 2
  * MSU, length is 3 or more
+ * For MTP2_HSL, sequences are on 2 bytes, and length on 9 bits
  */
 struct block *
 gen_mtp2type_abbrev(type)
@@ -8187,6 +8488,33 @@ gen_mtp2type_abbrev(type)
 		b0 = gen_ncmp(OR_PACKET, off_li, BPF_B, 0x3f, BPF_JGT, 0, 2);
 		break;
 
+	case MH_FISU:
+		if ( (linktype != DLT_MTP2) &&
+		     (linktype != DLT_ERF) &&
+		     (linktype != DLT_MTP2_WITH_PHDR) )
+			bpf_error("'hfisu' supported only on MTP2_HSL");
+		/* gen_ncmp(offrel, offset, size, mask, jtype, reverse, value) */
+		b0 = gen_ncmp(OR_PACKET, off_li_hsl, BPF_H, 0xff80, BPF_JEQ, 0, 0);
+		break;
+
+	case MH_LSSU:
+		if ( (linktype != DLT_MTP2) &&
+		     (linktype != DLT_ERF) &&
+		     (linktype != DLT_MTP2_WITH_PHDR) )
+			bpf_error("'hlssu' supported only on MTP2_HSL");
+		b0 = gen_ncmp(OR_PACKET, off_li_hsl, BPF_H, 0xff80, BPF_JGT, 1, 0x0100);
+		b1 = gen_ncmp(OR_PACKET, off_li_hsl, BPF_H, 0xff80, BPF_JGT, 0, 0);
+		gen_and(b1, b0);
+		break;
+
+	case MH_MSU:
+		if ( (linktype != DLT_MTP2) &&
+		     (linktype != DLT_ERF) &&
+		     (linktype != DLT_MTP2_WITH_PHDR) )
+			bpf_error("'hmsu' supported only on MTP2_HSL");
+		b0 = gen_ncmp(OR_PACKET, off_li_hsl, BPF_H, 0xff80, BPF_JGT, 0, 0x0100);
+		break;
+
 	default:
 		abort();
 	}
@@ -8202,8 +8530,16 @@ gen_mtp3field_code(mtp3field, jvalue, jtype, reverse)
 {
 	struct block *b0;
 	bpf_u_int32 val1 , val2 , val3;
+	u_int newoff_sio=off_sio;
+	u_int newoff_opc=off_opc;
+	u_int newoff_dpc=off_dpc;
+	u_int newoff_sls=off_sls;
 
 	switch (mtp3field) {
+
+	case MH_SIO:
+		newoff_sio += 3; /* offset for MTP2_HSL */
+		/* FALLTHROUGH */
 
 	case M_SIO:
 		if (off_sio == (u_int)-1)
@@ -8212,10 +8548,12 @@ gen_mtp3field_code(mtp3field, jvalue, jtype, reverse)
 		if(jvalue > 255)
 		        bpf_error("sio value %u too big; max value = 255",
 		            jvalue);
-		b0 = gen_ncmp(OR_PACKET, off_sio, BPF_B, 0xffffffff,
+		b0 = gen_ncmp(OR_PACKET, newoff_sio, BPF_B, 0xffffffff,
 		    (u_int)jtype, reverse, (u_int)jvalue);
 		break;
 
+	case MH_OPC:
+		newoff_opc+=3;
         case M_OPC:
 	        if (off_opc == (u_int)-1)
 			bpf_error("'opc' supported only on SS7");
@@ -8232,9 +8570,13 @@ gen_mtp3field_code(mtp3field, jvalue, jtype, reverse)
 		val3 = jvalue & 0x00000003;
 		val3 = val3 <<22;
 		jvalue = val1 + val2 + val3;
-		b0 = gen_ncmp(OR_PACKET, off_opc, BPF_W, 0x00c0ff0f,
+		b0 = gen_ncmp(OR_PACKET, newoff_opc, BPF_W, 0x00c0ff0f,
 		    (u_int)jtype, reverse, (u_int)jvalue);
 		break;
+
+	case MH_DPC:
+		newoff_dpc += 3;
+		/* FALLTHROUGH */
 
 	case M_DPC:
 	        if (off_dpc == (u_int)-1)
@@ -8250,10 +8592,12 @@ gen_mtp3field_code(mtp3field, jvalue, jtype, reverse)
 		val2 = jvalue & 0x00003f00;
 		val2 = val2 << 8;
 		jvalue = val1 + val2;
-		b0 = gen_ncmp(OR_PACKET, off_dpc, BPF_W, 0xff3f0000,
+		b0 = gen_ncmp(OR_PACKET, newoff_dpc, BPF_W, 0xff3f0000,
 		    (u_int)jtype, reverse, (u_int)jvalue);
 		break;
 
+	case MH_SLS:
+	  newoff_sls+=3;
 	case M_SLS:
 	        if (off_sls == (u_int)-1)
 			bpf_error("'sls' supported only on SS7");
@@ -8264,7 +8608,7 @@ gen_mtp3field_code(mtp3field, jvalue, jtype, reverse)
 		/* the following instruction is made to convert jvalue
 		 * to the forme used to write sls in an ss7 message*/
 		jvalue = jvalue << 4;
-		b0 = gen_ncmp(OR_PACKET, off_sls, BPF_B, 0xf0,
+		b0 = gen_ncmp(OR_PACKET, newoff_sls, BPF_B, 0xf0,
 		    (u_int)jtype,reverse, (u_int)jvalue);
 		break;
 
