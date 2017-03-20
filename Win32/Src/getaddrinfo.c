@@ -45,14 +45,15 @@
  *   in ai_flags?
  */
 
+/*
+ * Mingw64 has its own implementation of getaddrinfo, mingw32 no
+ */
+#ifndef __MINGW64__
+ 
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif 
-
-#ifndef lint
-static const char rcsid[] _U_ =
-     "@(#) $Header: /tcpdump/master/libpcap/Win32/Src/getaddrinfo.c,v 1.3 2008-09-15 23:37:51 guy Exp $";
-#endif
 
 #include <pcap-stdinc.h>
 #if 0
@@ -85,7 +86,7 @@ static const char rcsid[] _U_ =
 #ifdef NEED_ADDRINFO_H
 #include "addrinfo.h"
 #ifdef WIN32
-#include "IP6_misc.h"
+#include "ip6_misc.h"
 #endif
 #endif
 
@@ -1118,3 +1119,6 @@ find_afd(af)
 	}
 	return NULL;
 }
+
+
+#endif /*__MING64__*/
