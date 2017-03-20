@@ -1,14 +1,8 @@
 Misc. fixes to the upstream man page.
 
----
- pcap.3pcap.in         |    2 +-
- pcap_compile.3pcap.in |    2 +-
- pcap_fileno.3pcap     |    2 +-
- 3 files changed, 3 insertions(+), 3 deletions(-)
-
 --- a/pcap.3pcap.in
 +++ b/pcap.3pcap.in
-@@ -363,7 +363,7 @@
+@@ -882,7 +882,7 @@
  script or some other configuration script to check whether the libpcap
  1.0 APIs are available and use them only if they are.
  .SH SEE ALSO
@@ -17,25 +11,3 @@ Misc. fixes to the upstream man page.
  usermod(1M)
  .SH AUTHORS
  The original authors of libpcap are:
---- a/pcap_compile.3pcap.in
-+++ b/pcap_compile.3pcap.in
-@@ -55,7 +55,7 @@
- being captured isn't known to the program, or if packets are being
- captured on the Linux "any" pseudo-interface that can capture on more
- than one network, a value of PCAP_NETMASK_UNKNOWN can be supplied; tests
--for IPv4 broadcast addreses will fail to compile, but all other tests in
-+for IPv4 broadcast addresses will fail to compile, but all other tests in
- the filter program will be OK.
- .SH RETURN VALUE
- .B pcap_compile()
---- a/pcap_fileno.3pcap
-+++ b/pcap_fileno.3pcap
-@@ -47,7 +47,7 @@
- .LP
- If
- .I p
--refers to a ``savefile'' that was opened using fuctions such as
-+refers to a ``savefile'' that was opened using functions such as
- .BR pcap_open_offline()
- or
- .BR pcap_fopen_offline() ,
