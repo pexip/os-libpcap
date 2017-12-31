@@ -153,22 +153,3 @@ build a shared library.
  		    V_SHLIB_CMD="\$(CC)"
  		    V_SHLIB_OPT="-shared"
  		    V_SONAME_OPT="-Wl,-soname,"
---- a/pcap-config.in
-+++ b/pcap-config.in
-@@ -36,16 +36,6 @@
- 	esac
- 	shift
- done
--if [ "$V_RPATH_OPT" != "" ]
--then
--	#
--	# If libdir isn't /usr/lib, add it to the run-time linker path.
--	#
--	if [ "$libdir" != "/usr/lib" ]
--	then
--		RPATH=$V_RPATH_OPT$libdir
--	fi
--fi
- if [ "$static" = 1 ]
- then
- 	#

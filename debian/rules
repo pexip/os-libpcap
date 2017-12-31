@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-DEB_HOST_ARCH_OS := $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
+include /usr/share/dpkg/architecture.mk
 
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 export with_pcap=linux
