@@ -7,7 +7,7 @@ It was downloaded from http://tcpdump.org/release/libpcap-0.8.3.tar.gz
 
 Upstream Authors: tcpdump-workers@tcpdump.org
 
-Licensed under the 3-clause BSD license: 
+Licensed under the 3-clause BSD license:
 
   Copyright (C) 1993-2008 The Regents of the University of California.
 
@@ -54,7 +54,7 @@ Additional people who have contributed patches:
 	Darren Reed			<darrenr@reed.wattle.id.au>
 	David Kaelbling			<drk@sgi.com>
 	David Young			<dyoung@ojctech.com>
-	Don Ebright			<Don.Ebright@compuware.com> 
+	Don Ebright			<Don.Ebright@compuware.com>
 	Eric Anderson			<anderse@hpl.hp.com>
 	Franz Schaefer			<schaefer@mond.at>
 	Gianluca Varenni		<varenni@netgroup-serv.polito.it>
