@@ -14,7 +14,7 @@ Standards-Version: 3.9.8
 Homepage: http://www.tcpdump.org/
 Vcs-Browser: https://anonscm.debian.org/cgit/users/rfrancoise/libpcap.git/
 Vcs-Git: git://anonscm.debian.org/users/rfrancoise/libpcap.git
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ stretch
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ buster
 
 Package: libpcap-dev
 Section: libdevel
