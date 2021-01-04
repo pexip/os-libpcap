@@ -6,6 +6,7 @@ libpcap.so.0.8 libpcap0.8 #MINVER#
  eproto_db@Base 0.9.8
  pcap_activate@Base 1.0.0
  pcap_breakloop@Base 0.9.8
+ pcap_bufsize@Base 1.9.0
  pcap_can_set_rfmon@Base 1.0.0
  pcap_close@Base 0.9.8
  pcap_compile@Base 0.9.8
@@ -15,6 +16,7 @@ libpcap.so.0.8 libpcap0.8 #MINVER#
  pcap_datalink_ext@Base 1.0.0
  pcap_datalink_name_to_val@Base 0.9.8
  pcap_datalink_val_to_description@Base 0.9.8
+ pcap_datalink_val_to_description_or_dlt@Base 1.9.1
  pcap_datalink_val_to_name@Base 0.9.8
  pcap_dispatch@Base 0.9.8
  pcap_dump@Base 0.9.8
@@ -22,6 +24,7 @@ libpcap.so.0.8 libpcap0.8 #MINVER#
  pcap_dump_file@Base 0.9.8
  pcap_dump_flush@Base 0.9.8
  pcap_dump_fopen@Base 0.9.8
+ pcap_dump_ftell64@Base 1.9.0
  pcap_dump_ftell@Base 0.9.8
  pcap_dump_open@Base 0.9.8
  pcap_dump_open_append@Base 1.7.3
@@ -36,10 +39,12 @@ libpcap.so.0.8 libpcap0.8 #MINVER#
  pcap_free_tstamp_types@Base 1.2.1
  pcap_freealldevs@Base 0.9.8
  pcap_freecode@Base 0.9.8
+ pcap_get_required_select_timeout@Base 1.9.0
  pcap_get_selectable_fd@Base 0.9.8
  pcap_get_tstamp_precision@Base 1.5.1
  pcap_geterr@Base 0.9.8
  pcap_getnonblock@Base 0.9.8
+ pcap_init@Base 1.10.0
  pcap_inject@Base 0.9.8
  pcap_is_swapped@Base 0.9.8
  pcap_lib_version@Base 0.9.8
@@ -73,6 +78,7 @@ libpcap.so.0.8 libpcap0.8 #MINVER#
  pcap_set_datalink@Base 0.9.8
  pcap_set_immediate_mode@Base 1.5.1
  pcap_set_promisc@Base 1.0.0
+ (arch=linux-any)pcap_set_protocol_linux@Base 1.9.0
  pcap_set_rfmon@Base 1.0.0
  pcap_set_snaplen@Base 1.0.0
  pcap_set_timeout@Base 1.0.0
