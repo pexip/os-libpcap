@@ -8,3 +8,4 @@ kfreebsd.diff
 disable-remote.diff
 man-errors.diff
 pcap-config.diff
+0001-do-sanity-checks-on-PHB-header-length-before-allocat.patch
