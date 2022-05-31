@@ -14,7 +14,7 @@ Standards-Version: 4.1.2
 Homepage: http://www.tcpdump.org/
 Vcs-Browser: https://salsa.debian.org/rfrancoise/libpcap
 Vcs-Git: https://salsa.debian.org/rfrancoise/libpcap.git
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ buster
+XS-Pexip-Upstream: http://deb.debian.org/debian/ bullseye
 
 Package: libpcap-dev
 Section: libdevel
