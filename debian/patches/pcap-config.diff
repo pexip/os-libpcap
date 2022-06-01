@@ -4,16 +4,16 @@ generated script to be arch-independent.
 
 --- a/pcap-config.in
 +++ b/pcap-config.in
-@@ -7,8 +7,6 @@
+@@ -11,8 +11,6 @@
  prefix="@prefix@"
  exec_prefix="@exec_prefix@"
  includedir="@includedir@"
 -libdir="@libdir@"
 -V_RPATH_OPT="@V_RPATH_OPT@"
  LIBS="@LIBS@"
+ PACKAGE_NAME="@PACKAGE_NAME@"
  
- static=0
-@@ -36,16 +34,6 @@
+@@ -41,16 +39,6 @@
  	esac
  	shift
  done
@@ -30,7 +30,7 @@ generated script to be arch-independent.
  if [ "$static" = 1 ]
  then
  	#
-@@ -54,16 +42,16 @@
+@@ -59,16 +47,16 @@
  	#
  	if [ "$show_cflags" = 1 -a "$show_libs" = 1 ]
  	then
@@ -50,20 +50,20 @@ generated script to be arch-independent.
  	elif [ "$show_additional_libs" = 1 ]
  	then
  		echo "$LIBS"
-@@ -75,7 +63,7 @@
+@@ -80,7 +68,7 @@
  	#
  	if [ "$show_cflags" = 1 -a "$show_libs" = 1 ]
  	then
--		echo "-I$includedir -L$libdir $RPATH -lpcap"
-+		echo "-I$includedir -lpcap"
+-		echo "-I$includedir -L$libdir $RPATH -l$PACKAGE_NAME"
++		echo "-I$includedir -l$PACKAGE_NAME"
  	elif [ "$show_cflags" = 1 -a "$show_additional_libs" = 1 ]
  	then
  		echo "-I$includedir"
-@@ -84,6 +72,6 @@
+@@ -89,6 +77,6 @@
  		echo "-I$includedir"
  	elif [ "$show_libs" = 1 ]
  	then
--		echo "-L$libdir $RPATH -lpcap"
-+		echo "-lpcap"
+-		echo "-L$libdir $RPATH -l$PACKAGE_NAME"
++		echo "-l$PACKAGE_NAME"
  	fi
  fi

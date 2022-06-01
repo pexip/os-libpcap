@@ -11,20 +11,32 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
 
 --- a/configure.ac
 +++ b/configure.ac
-@@ -361,6 +361,8 @@
- 	VALGRINDTEST=valgrindtest
- elif test -r /usr/include/net/raw.h ; then
- 	V_PCAP=snoop
-+elif test -r /usr/include/hurd.h ; then
-+	V_PCAP=hurd
- elif test -r /usr/include/odmi.h ; then
- 	#
- 	# On AIX, the BPF devices might not yet be present - they're
-@@ -601,6 +603,10 @@
- 		    ])
+@@ -656,6 +656,7 @@
+ 	AC_CHECK_HEADERS(net/nit.h sys/net/nit.h)
+ 	AC_CHECK_HEADERS(linux/socket.h net/raw.h sys/dlpi.h)
+ 	AC_CHECK_HEADERS(config/HaikuConfig.h)
++	AC_CHECK_HEADERS(hurd.h)
+ 
+ 	if test "$ac_cv_lbl_bpf_h_defines_biocsetif" = yes; then
+ 		#
+@@ -717,6 +718,11 @@
+ 		# Haiku.
+ 		#
+ 		V_PCAP=haiku
++	elif test "$ac_cv_header_hurd_h" = yes; then
++		#
++		# Hurd.
++		#
++		V_PCAP=hurd
+ 	else
+ 		#
+ 		# Nothing we support.
+@@ -984,6 +990,11 @@
+  	PLATFORM_C_SRC="pcap-snoop.c"
  	;;
  
 +hurd)
++ 	PLATFORM_C_SRC="pcap-hurd.c"
 +	LIBS="$LIBS -lrt"
 +	;;
 +
@@ -33,7 +45,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
  	# --with-pcap=dag is the only way to get here, and it means
 --- /dev/null
 +++ b/pcap-hurd.c
-@@ -0,0 +1,255 @@
+@@ -0,0 +1,263 @@
 +#define _GNU_SOURCE
 +
 +/* XXX Hack not to include the Mach BPF interface */
@@ -133,7 +145,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
 +}
 +
 +static int
-+pcap_inject_hurd(pcap_t *p, const void *buf, size_t size)
++pcap_inject_hurd(pcap_t *p, const void *buf, int size)
 +{
 +	struct pcap_hurd *ph;
 +	kern_return_t kr;
@@ -272,8 +284,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
 +	struct pcap_hurd *ph;
 +	pcap_t *p;
 +
-+	p = pcap_create_common(ebuf, sizeof (struct pcap_hurd));
-+
++	p = PCAP_CREATE_COMMON(ebuf, struct pcap_hurd);
 +	if (p == NULL)
 +		return NULL;
 +
@@ -285,7 +296,16 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
 +}
 +
 +int
-+pcap_platform_finddevs(pcap_if_t **alldevsp, char *errbuf)
++pcap_platform_finddevs(pcap_if_list_t *alldevsp, char *errbuf)
 +{
 +	return 0;
++}
++
++/*
++ * Libpcap version string.
++ */
++const char *
++pcap_lib_version(void)
++{
++	return PCAP_VERSION_STRING;
 +}
