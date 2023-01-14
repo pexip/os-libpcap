@@ -2,15 +2,7 @@ Support for GNU/kFreeBSD, by Aurelien Jarno and others.
 
 --- a/configure.ac
 +++ b/configure.ac
-@@ -63,6 +63,7 @@
- AC_CHECK_HEADERS(sys/ioccom.h sys/sockio.h)
- AC_CHECK_HEADERS(netpacket/packet.h)
- AC_CHECK_HEADERS(net/pfvar.h, , , [#include <sys/types.h>
-+#include <net/if_pflog.h>
- #include <sys/socket.h>
- #include <net/if.h>])
- if test "$ac_cv_header_net_pfvar_h" = yes; then
-@@ -967,6 +968,7 @@
+@@ -1127,6 +1127,7 @@
  		#endif
  		#include <net/bpf.h>
  	    ])

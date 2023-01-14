@@ -11,7 +11,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
 
 --- a/configure.ac
 +++ b/configure.ac
-@@ -656,6 +656,7 @@
+@@ -756,6 +756,7 @@
  	AC_CHECK_HEADERS(net/nit.h sys/net/nit.h)
  	AC_CHECK_HEADERS(linux/socket.h net/raw.h sys/dlpi.h)
  	AC_CHECK_HEADERS(config/HaikuConfig.h)
@@ -19,7 +19,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
  
  	if test "$ac_cv_lbl_bpf_h_defines_biocsetif" = yes; then
  		#
-@@ -717,6 +718,11 @@
+@@ -817,6 +818,11 @@
  		# Haiku.
  		#
  		V_PCAP=haiku
@@ -31,7 +31,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
  	else
  		#
  		# Nothing we support.
-@@ -984,6 +990,11 @@
+@@ -1144,6 +1150,11 @@
   	PLATFORM_C_SRC="pcap-snoop.c"
  	;;
  

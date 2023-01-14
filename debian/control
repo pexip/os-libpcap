@@ -2,16 +2,15 @@ Source: libpcap
 Section: devel
 Priority: optional
 Maintainer: Romain Francoise <rfrancoise@debian.org>
-Build-Depends: autotools-dev,
-               bison,
-               debhelper (>= 8.9.7),
-               dh-autoreconf,
+Build-Depends: bison,
+               debhelper-compat (= 13),
                flex,
                libbluetooth-dev [linux-any],
                libdbus-1-dev,
-               linux-libc-dev (>= 2.6.27) [i386]
-Standards-Version: 4.5.1
-Homepage: http://www.tcpdump.org/
+               linux-libc-dev [i386]
+Rules-Requires-Root: no
+Standards-Version: 4.6.2
+Homepage: https://www.tcpdump.org/
 Vcs-Browser: https://salsa.debian.org/rfrancoise/libpcap
 Vcs-Git: https://salsa.debian.org/rfrancoise/libpcap.git
 
@@ -31,8 +30,7 @@ Depends: libc6-dev,
          libdbus-1-dev,
          libpcap0.8 (= ${binary:Version}),
          ${misc:Depends}
-Conflicts: libpcap-dev (<< 0.9),
-           libpcap0.7-dev
+Conflicts: libpcap0.7-dev
 Multi-Arch: same
 Description: development library and header files for libpcap0.8
  Headers, static libraries, and documentation for the libpcap library.
@@ -53,7 +51,6 @@ Architecture: any
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
          ${shlibs:Depends}
-Replaces: libpcap0.8-dev (<< 1.0.0-2)
 Multi-Arch: same
 Description: system interface for user-level packet capture
  libpcap (Packet CAPture) provides a portable framework for low-level
@@ -65,18 +62,3 @@ Description: system interface for user-level packet capture
  functionality, the libpcap authors created this system-independent API
  to ease in porting and to alleviate the need for several
  system-dependent packet capture modules in each application.
-
-Package: libpcap0.8-dbg
-Section: debug
-Priority: optional
-Architecture: any
-Depends: libpcap0.8 (= ${binary:Version}),
-         ${misc:Depends},
-         ${shlibs:Depends}
-Multi-Arch: same
-Description: debugging symbols for libpcap0.8
- libpcap (Packet CAPture) provides a portable framework for low-level
- network monitoring.  Applications include network statistics collection,
- security monitoring, network debugging, etc.
- .
- This package contains the debugging symbols for the libpcap library.
