@@ -18,8 +18,8 @@ build a shared library.
  #
  # You shouldn't need to edit anything below.
  #
-@@ -70,7 +78,8 @@
- EXTRA_NETWORK_LIBS=@EXTRA_NETWORK_LIBS@
+@@ -69,7 +77,8 @@
+ INSTALL_RPCAPD=@INSTALL_RPCAPD@
  
  # Standard CFLAGS for building members of a shared library
 -FULL_CFLAGS = $(CCOPT) @V_LIB_CCOPT_FAT@ $(SHLIB_CCOPT) $(INCLS) $(DEFS) $(CFLAGS)
@@ -28,7 +28,7 @@ build a shared library.
  CXXFLAGS = $(CCOPT) @V_LIB_CCOPT_FAT@ $(SHLIB_CCOPT) $(INCLS) $(DEFS) $(CFLAGS)
  
  INSTALL = @INSTALL@
-@@ -86,7 +95,11 @@
+@@ -85,7 +94,11 @@
  # problem if you don't own the file but can write to the directory.
  .c.o:
  	@rm -f $@
@@ -41,7 +41,7 @@ build a shared library.
  
  PLATFORM_C_SRC =	@PLATFORM_C_SRC@
  PLATFORM_CXX_SRC =	@PLATFORM_CXX_SRC@
-@@ -110,6 +123,10 @@
+@@ -109,6 +122,10 @@
  	$(MODULE_C_SRC:.c=.o) $(REMOTE_C_SRC:.c=.o) $(COMMON_C_SRC:.c=.o) \
  	$(GENERATED_C_SRC:.c=.o) \
  	$(LIBOBJS)
@@ -52,16 +52,16 @@ build a shared library.
  
  PUBHDR = \
  	pcap.h \
-@@ -165,7 +182,7 @@
+@@ -167,7 +184,7 @@
  
  CLEANFILES = $(OBJ) libpcap.a libpcap.so.`cat $(srcdir)/VERSION` \
  	$(PROG)-`cat $(srcdir)/VERSION`.tar.gz $(GENERATED_C_SRC) $(GENHDR) \
 -	lex.yy.c pcap-config libpcap.pc
-+	lex.yy.c pcap-config libpcap.pc $(OBJ_PIC)
++	lex.yy.c pcap-config libpcap.pc $(OBJ_PIC) $(SHARED_LIB)
  
  MAN1 = pcap-config.1
  
-@@ -422,7 +439,7 @@
+@@ -436,7 +453,7 @@
  	$(AR) rc $@ $(OBJ) $(ADDLARCHIVEOBJS)
  	$(RANLIB) $@
  
@@ -70,7 +70,7 @@ build a shared library.
  
  libpcap.so: $(OBJ)
  	@rm -f $@
-@@ -498,6 +515,13 @@
+@@ -512,6 +529,13 @@
  #
  libpcap.none:
  
@@ -84,7 +84,7 @@ build a shared library.
  scanner.c: $(srcdir)/scanner.l
  	$(LEX) -P pcap_ --header-file=scanner.h --nounput -o scanner.c $<
  scanner.h: scanner.c
-@@ -510,6 +534,9 @@
+@@ -524,6 +548,9 @@
  scanner.o: scanner.c grammar.h
  	$(CC) $(FULL_CFLAGS) -c scanner.c
  
@@ -94,47 +94,58 @@ build a shared library.
  #
  # Generate the grammar.y file.
  #
-@@ -541,6 +568,10 @@
+@@ -555,24 +582,45 @@
  grammar.o: grammar.c scanner.h
  	$(CC) $(FULL_CFLAGS) -c grammar.c
  
-+grammar_pic.o: grammar.c
-+	@rm -f $@
++grammar_pic.o: grammar.c scanner.h
 +	$(CC) -fPIC $(FULL_CFLAGS) -o $@ -c grammar.c
 +
  gencode.o: $(srcdir)/gencode.c grammar.h scanner.h
  	$(CC) $(FULL_CFLAGS) -c $(srcdir)/gencode.c
  
-@@ -553,9 +584,17 @@
++gencode_pic.o: $(srcdir)/gencode.c grammar.h scanner.h
++	$(CC) -fPIC $(FULL_CFLAGS) -o $@ -c $(srcdir)/gencode.c
++
+ asprintf.o: $(srcdir)/missing/asprintf.c
+ 	$(CC) $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/asprintf.c
+ 
++asprintf_pic.o: $(srcdir)/missing/asprintf.c
++	$(CC) -fPIC $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/asprintf.c
++
+ snprintf.o: $(srcdir)/missing/snprintf.c
+ 	$(CC) $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/snprintf.c
+ 
++snprintf_pic.o: $(srcdir)/missing/snprintf.c
++	$(CC) -fPIC $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/snprintf.c
++
  strlcat.o: $(srcdir)/missing/strlcat.c
  	$(CC) $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/strlcat.c
  
 +strlcat_pic.o: $(srcdir)/missing/strlcat.c
-+	@rm -f $@
 +	$(CC) -fPIC $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/strlcat.c
 +
  strlcpy.o: $(srcdir)/missing/strlcpy.c
  	$(CC) $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/strlcpy.c
  
 +strlcpy_pic.o: $(srcdir)/missing/strlcpy.c
-+	@rm -f $@
 +	$(CC) -fPIC $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/strlcpy.c
 +
  strtok_r.o: $(srcdir)/missing/strtok_r.c
  	$(CC) $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/strtok_r.c
  
-@@ -587,6 +626,9 @@
- 	mv $@.tmp $@
- 	chmod a+x $@
- 
-+bpf_filter_pic.o: bpf_filter.c
-+	$(CC) -fPIC $(FULL_CFLAGS) -c bpf_filter.c -o $@
++strtok_r_pic.o: $(srcdir)/missing/strtok_r.c
++	$(CC) -fPIC $(FULL_CFLAGS) -o $@ -c $(srcdir)/missing/strtok_r.c
 +
  #
- # Remote pcap daemon.
+ # Generate the libpcap.pc file.
  #
-@@ -683,11 +725,9 @@
- install-shared-so: libpcap.so
+@@ -694,14 +742,12 @@
+ 		    $(DESTDIR)$(mandir)/man@MAN_MISC_INFO@/`echo $$i | sed 's/.manmisc.in/.@MAN_MISC_INFO@/'`; done
+ 
+ install-shared: install-shared-$(DYEXT)
+-install-shared-so: libpcap.so
++install-shared-so: $(SHAREDLIB)
  	[ -d $(DESTDIR)$(libdir) ] || \
  	    (mkdir -p $(DESTDIR)$(libdir); chmod 755 $(DESTDIR)$(libdir))
 -	VER=`cat $(srcdir)/VERSION`; \
@@ -150,18 +161,18 @@ build a shared library.
  	    (mkdir -p $(DESTDIR)$(libdir); chmod 755 $(DESTDIR)$(libdir))
 --- a/aclocal.m4
 +++ b/aclocal.m4
-@@ -507,7 +507,7 @@
+@@ -515,7 +515,7 @@
  			esac
  			;;
  		    esac
 -		    V_SHLIB_CCOPT="$V_SHLIB_CCOPT $PIC_OPT"
 +		    V_SHLIB_CCOPT="$V_SHLIB_CCOPT"
  		    V_SONAME_OPT="-Wl,-soname,"
- 		    V_RPATH_OPT="-Wl,-rpath,"
  		    ;;
-@@ -570,7 +570,7 @@
+ 
+@@ -583,7 +583,7 @@
  		    #
- 		    # "cc" is GCC.
+ 		    # XXX - does 64-bit SPARC require -fPIC?
  		    #
 -		    V_SHLIB_CCOPT="$V_SHLIB_CCOPT -fpic"
 +		    V_SHLIB_CCOPT="$V_SHLIB_CCOPT"
