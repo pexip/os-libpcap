@@ -1,3 +1,9 @@
+libpcap (1.10.3-1pexip1) pexip-bookworm; urgency=medium
+
+  * Initial bookworm build
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Thu, 16 Nov 2023 10:07:27 +0000
+
 libpcap (1.10.3-1) unstable; urgency=medium
 
   * New upstream release.
