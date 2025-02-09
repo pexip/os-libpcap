@@ -1,12 +1,11 @@
 #!/usr/bin/make -f
 
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
 include /usr/share/dpkg/architecture.mk
 
 ifeq ($(DEB_HOST_ARCH_OS),linux)
 export with_pcap=linux
-endif
-ifeq ($(DEB_HOST_ARCH_OS),kfreebsd)
-export with_pcap=bpf
 endif
 ifeq ($(DEB_HOST_ARCH_OS),hurd)
 export with_pcap=hurd
@@ -17,8 +16,12 @@ endif
 
 override_dh_install-arch:
 	dh_install
-	# pcap-filter man page goes into libpcap0.8 (#527599)
+	# Some man pages of interest to end users go into libpcap0.8
+	# (see #527599, #1035661).
+	rm debian/libpcap0.8-dev/usr/share/man/man5/pcap-savefile.5
+	rmdir debian/libpcap0.8-dev/usr/share/man/man5
 	rm debian/libpcap0.8-dev/usr/share/man/man7/pcap-filter.7
+	rm debian/libpcap0.8-dev/usr/share/man/man7/pcap-tstamp.7
 
 override_dh_strip-arch:
 	dh_strip --dbgsym-migration='libpcap0.8-dbg (<< 1.10.1-3~)'
