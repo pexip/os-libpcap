@@ -1,3 +1,65 @@
+libpcap (1.10.5-2) unstable; urgency=medium
+
+  * Transfer ownership to pkg-security team.
+  * Set Vcs-* fields to new locations in Debian group.
+
+ -- Romain Francoise <rfrancoise@debian.org>  Sun, 09 Feb 2025 12:17:39 +0100
+
+libpcap (1.10.5-1) unstable; urgency=low
+
+  * New upstream release.
+  * Drop lintian override 'package-name-doesnt-match-sonames'.
+
+ -- Romain Francoise <rfrancoise@debian.org>  Sun, 01 Sep 2024 21:57:30 +0200
+
+libpcap (1.10.4-5) unstable; urgency=medium
+
+  * Acknowledge NMU from Benjamin Drung for time_t transition, thanks!
+  * Run wrap-and-sort.
+  * Bump Standards-Version to 4.7.0.
+  * debian/watch: Switch to .tar.xz URLs as upstream homepage no longer
+    lists the .tar.gz.
+
+ -- Romain Francoise <rfrancoise@debian.org>  Sat, 04 May 2024 13:01:04 +0200
+
+libpcap (1.10.4-4.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Rename libraries for 64-bit time_t transition.  Closes: #1062565
+
+ -- Benjamin Drung <bdrung@debian.org>  Wed, 28 Feb 2024 16:15:04 +0000
+
+libpcap (1.10.4-4) unstable; urgency=medium
+
+  * debian/patches/shared-lib.diff: Fix clean target (closes: #1045792).
+  * Add DEP-3 headers to all patches.
+
+ -- Romain Francoise <rfrancoise@debian.org>  Mon, 14 Aug 2023 17:49:33 +0200
+
+libpcap (1.10.4-3) unstable; urgency=medium
+
+  * Move pcap-savefile(5) and pcap-tstamp(7) man pages to libpcap0.8 as
+    they are generally useful for end users and are referenced in
+    tcpdump(8) (closes: #1035661).
+  * Enable all hardening options.
+  * Clean up remaining bits of kFreeBSD support, which are no longer
+    needed.
+  * Add missing Build-Depends-Package header to libpcap0.8.symbols.
+
+ -- Romain Francoise <rfrancoise@debian.org>  Sat, 22 Jul 2023 13:02:38 +0200
+
+libpcap (1.10.4-2) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Romain Francoise <rfrancoise@debian.org>  Sat, 17 Jun 2023 17:41:43 +0200
+
+libpcap (1.10.4-1) experimental; urgency=medium
+
+  * New upstream release (with no actual code changes).
+
+ -- Romain Francoise <rfrancoise@debian.org>  Mon, 10 Apr 2023 17:29:37 +0200
+
 libpcap (1.10.3-1+pexip24u3) pexip-bookworm; urgency=medium
 
   * New versioning scheme

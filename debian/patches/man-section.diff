@@ -1,4 +1,6 @@
-Misc. fixes to the upstream man page.
+Description: Change tcpdump man page section
+Forwarded: not-needed
+Author: Romain Francoise <rfrancoise@debian.org>
 
 --- a/pcap.3pcap.in
 +++ b/pcap.3pcap.in

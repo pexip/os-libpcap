@@ -2,18 +2,19 @@ Source: libpcap
 Section: devel
 Priority: optional
 Maintainer: Pexip AS <packaging@pexip.com>
-XSBC-Pexip-Original-Maintainer: Romain Francoise <rfrancoise@debian.org>
+XSBC-Pexip-Original-Maintainer: Debian Security Tools <team+pkg-security@tracker.debian.org>
 Build-Depends: bison,
                debhelper-compat (= 13),
+               dpkg-dev (>= 1.22.5),
                flex,
                libbluetooth-dev [linux-any],
                libdbus-1-dev,
                linux-libc-dev [i386]
 Rules-Requires-Root: no
-Standards-Version: 4.6.2
+Standards-Version: 4.7.0
 Homepage: https://www.tcpdump.org/
-Vcs-Browser: https://salsa.debian.org/rfrancoise/libpcap
-Vcs-Git: https://salsa.debian.org/rfrancoise/libpcap.git
+Vcs-Browser: https://salsa.debian.org/debian/libpcap
+Vcs-Git: https://salsa.debian.org/debian/libpcap.git
 XS-Pexip-Upstream: http://deb.debian.org/debian/ trixie
 
 Package: libpcap-dev
@@ -30,11 +31,11 @@ Section: libdevel
 Architecture: any
 Depends: libc6-dev,
          libdbus-1-dev,
-         libpcap0.8 (= ${binary:Version}),
+         libpcap0.8t64 (= ${binary:Version}),
          ${misc:Depends}
 Conflicts: libpcap0.7-dev
 Multi-Arch: same
-Description: development library and header files for libpcap0.8
+Description: development library and header files for libpcap0.8t64
  Headers, static libraries, and documentation for the libpcap library.
  .
  libpcap (Packet CAPture) provides a portable framework for low-level
@@ -47,12 +48,16 @@ Description: development library and header files for libpcap0.8
  to ease in porting and to alleviate the need for several
  system-dependent packet capture modules in each application.
 
-Package: libpcap0.8
+Package: libpcap0.8t64
+Provides: ${t64:Provides}
+Breaks: libpcap0.8 (<< ${source:Version})
 Section: libs
 Architecture: any
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
          ${shlibs:Depends}
+Replaces: libpcap0.8,
+          libpcap0.8-dev (<< 1.10.4-3)
 Multi-Arch: same
 Description: system interface for user-level packet capture
  libpcap (Packet CAPture) provides a portable framework for low-level

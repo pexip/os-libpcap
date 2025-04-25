@@ -1,7 +1,7 @@
->From 0345076badd69b840777fbd3fdf2e0bdd77954db Mon Sep 17 00:00:00 2001
 From: Richard Braun <rbraun@sceen.net>
 Date: Thu, 10 Apr 2014 01:26:01 +0200
 Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
+Forwarded: https://github.com/the-tcpdump-group/libpcap/commit/04b51af508caec959f695bc3bbb62afa97ca5b38
 
 ---
  configure.in |   6 ++
@@ -11,7 +11,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
 
 --- a/configure.ac
 +++ b/configure.ac
-@@ -756,6 +756,7 @@
+@@ -749,6 +749,7 @@
  	AC_CHECK_HEADERS(net/nit.h sys/net/nit.h)
  	AC_CHECK_HEADERS(linux/socket.h net/raw.h sys/dlpi.h)
  	AC_CHECK_HEADERS(config/HaikuConfig.h)
@@ -19,7 +19,7 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
  
  	if test "$ac_cv_lbl_bpf_h_defines_biocsetif" = yes; then
  		#
-@@ -817,6 +818,11 @@
+@@ -810,6 +811,11 @@
  		# Haiku.
  		#
  		V_PCAP=haiku
@@ -30,9 +30,9 @@ Subject: [PATCH] Debian GNU/Hurd (with NETDDE) support
 +		V_PCAP=hurd
  	else
  		#
- 		# Nothing we support.
-@@ -1144,6 +1150,11 @@
-  	PLATFORM_C_SRC="pcap-snoop.c"
+ 		# We don't have any capture type we know about.
+@@ -1163,6 +1169,11 @@
+ 	PLATFORM_C_SRC="pcap-snoop.c"
  	;;
  
 +hurd)

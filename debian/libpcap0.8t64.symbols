@@ -1,4 +1,5 @@
-libpcap.so.0.8 libpcap0.8 #MINVER#
+libpcap.so.0.8 libpcap0.8t64 #MINVER#
+* Build-Depends-Package: libpcap0.8-dev
  bpf_dump@Base 0.9.8
  bpf_filter@Base 0.9.8
  bpf_image@Base 0.9.8
