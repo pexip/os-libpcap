@@ -1,3 +1,9 @@
+libpcap (1.10.5-2+pexip25u2) pexip-trixie; urgency=medium
+
+  * Trixie build for product distribution
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Thu, 04 Dec 2025 13:38:49 +0000
+
 libpcap (1.10.5-2+pexip25u1) pexip-trixie; urgency=medium
 
   * Initial trixie build
